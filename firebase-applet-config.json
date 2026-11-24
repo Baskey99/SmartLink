@@ -1,11 +1,12 @@
 {
-  "projectId": "durable-cell-vk4jk",
-  "appId": "1:117525554029:web:4a5ebeaad710d10447b064",
-  "apiKey": "AIzaSyBs14mokQiC_8jGbWBa3mZkrQYn15X0KRc",
-  "authDomain": "durable-cell-vk4jk.firebaseapp.com",
-  "storageBucket": "durable-cell-vk4jk.firebasestorage.app",
-  "messagingSenderId": "117525554029",
+  "projectId": "smart-link-ba081",
+  "appId": "1:397408397870:web:6fc2fae8a136ee225e0dbf",
+  "apiKey": "AIzaSyAdwpKqbVW65I0zFJQ8KPALiUXkFS5xT90",
+  "authDomain": "smart-link-ba081.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-smartlink-fe2af6df-edca-44b0-a15f-5e765d8daa69",
+  "storageBucket": "smart-link-ba081.firebasestorage.app",
+  "messagingSenderId": "397408397870",
   "measurementId": "",
-  "oAuthClientId": "117525554029-vpkbbubjb3pbpkoaj5rvm7rebh1lh44v.apps.googleusercontent.com",
+  "oAuthClientId": "397408397870-hs1gnh5rdebfgqocrkddu7i95h3trtb8.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

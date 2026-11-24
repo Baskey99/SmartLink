@@ -1,0 +1,293 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 0: Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // Hardened Global Primitives
+    // =========================================================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'amitbaskey99@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() ||
+        (isVerifiedUser() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    // =========================================================================
+    // Validation Blueprints (Synchronized with firebase-blueprint.json)
+    // =========================================================================
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'fullName', 'email', 'role', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'fullName', 'email', 'role', 'status', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.uid == userId
+        && data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 100
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 254
+        && data.role in ['user', 'admin', 'super_admin']
+        && data.status in ['active', 'inactive']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSmartLink(data) {
+      return data.keys().hasAll([
+          'ownerId',
+          'linkName',
+          'shortCode',
+          'originalUrl',
+          'destinationType',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId',
+          'linkName',
+          'shortCode',
+          'originalUrl',
+          'destinationType',
+          'campaignId',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && isValidId(data.ownerId)
+        && data.linkName is string && data.linkName.size() >= 1 && data.linkName.size() <= 120
+        && data.shortCode is string && data.shortCode.size() >= 3 && data.shortCode.size() <= 32
+        && data.shortCode.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.originalUrl is string && data.originalUrl.size() >= 10 && data.originalUrl.size() <= 2048
+        && data.originalUrl.matches('^https://.*')
+        && data.destinationType in [
+          'youtube',
+          'whatsapp',
+          'instagram',
+          'google_maps',
+          'play_store',
+          'app_store',
+          'website',
+          'custom_app',
+          'other'
+        ]
+        && (!('campaignId' in data) || (data.campaignId is string && data.campaignId.size() <= 128 && data.campaignId.matches('^[a-zA-Z0-9_\\-]*$')))
+        && data.status in ['active', 'inactive', 'archived']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCampaign(data) {
+      return data.keys().hasAll(['ownerId', 'campaignName', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'ownerId',
+          'campaignName',
+          'description',
+          'utmSource',
+          'utmMedium',
+          'utmCampaign',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && isValidId(data.ownerId)
+        && data.campaignName is string && data.campaignName.size() >= 1 && data.campaignName.size() <= 120
+        && (!('description' in data) || (data.description is string && data.description.size() <= 500))
+        && (!('utmSource' in data) || (data.utmSource is string && data.utmSource.size() <= 80))
+        && (!('utmMedium' in data) || (data.utmMedium is string && data.utmMedium.size() <= 80))
+        && (!('utmCampaign' in data) || (data.utmCampaign is string && data.utmCampaign.size() <= 80))
+        && data.status in ['active', 'paused', 'completed', 'archived']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAdminRecord(data, adminId) {
+      return data.keys().hasAll(['uid', 'grantedAt'])
+        && data.keys().hasOnly(['uid', 'grantedAt'])
+        && isValidId(data.uid)
+        && data.uid == adminId
+        && data.grantedAt is timestamp;
+    }
+
+    function isOwnedCampaignOrUnassigned(data) {
+      return !('campaignId' in data)
+        || data.campaignId == ''
+        || (
+          exists(/databases/$(database)/documents/campaigns/$(data.campaignId))
+          && get(/databases/$(database)/documents/campaigns/$(data.campaignId)).data.ownerId == request.auth.uid
+        );
+    }
+
+    // =========================================================================
+    // Collection: /admins/{adminId}
+    // =========================================================================
+    match /admins/{adminId} {
+      allow get: if isVerifiedUser() && isValidId(adminId) && (request.auth.uid == adminId || isAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow create: if isVerifiedUser()
+        && isValidId(adminId)
+        && isValidAdminRecord(incoming(), adminId)
+        && incoming().grantedAt == request.time
+        && isAdmin();
+      allow update: if false;
+      allow delete: if isVerifiedUser() && isValidId(adminId) && isBootstrappedAdmin();
+    }
+
+    // =========================================================================
+    // Collection: /users/{userId} (Strict PII Isolation)
+    // =========================================================================
+    match /users/{userId} {
+      allow get: if isVerifiedUser() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+      allow list: if isVerifiedUser() && (resource.data.uid == request.auth.uid || isBootstrappedAdmin());
+
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == request.auth.uid
+        && incoming().email == request.auth.token.email
+        && incoming().role == 'user'
+        && incoming().status == 'active'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'status', 'fullName', 'updatedAt']))
+          ||
+          (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'updatedAt']))
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(userId) && isAdmin();
+    }
+
+    // =========================================================================
+    // Collection: /campaigns/{campaignId}
+    // =========================================================================
+    match /campaigns/{campaignId} {
+      allow get: if isVerifiedUser() && isValidId(campaignId) && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isVerifiedUser() && (resource.data.ownerId == request.auth.uid || isBootstrappedAdmin());
+
+      allow create: if isVerifiedUser()
+        && isValidId(campaignId)
+        && isValidCampaign(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser()
+        && isValidId(campaignId)
+        && isValidCampaign(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'campaignName',
+            'description',
+            'utmSource',
+            'utmMedium',
+            'utmCampaign',
+            'status',
+            'updatedAt'
+          ]))
+          ||
+          (existing().ownerId == request.auth.uid
+            && existing().status != 'archived'
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'campaignName',
+              'description',
+              'utmSource',
+              'utmMedium',
+              'utmCampaign',
+              'updatedAt'
+            ]))
+          ||
+          (existing().ownerId == request.auth.uid
+            && existing().status != 'archived'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(campaignId) && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    // =========================================================================
+    // Collection: /smartLinks/{linkId}
+    // =========================================================================
+    match /smartLinks/{linkId} {
+      allow get: if isVerifiedUser() && isValidId(linkId) && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isVerifiedUser() && (resource.data.ownerId == request.auth.uid || isBootstrappedAdmin());
+
+      allow create: if isVerifiedUser()
+        && isValidId(linkId)
+        && isValidSmartLink(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isOwnedCampaignOrUnassigned(incoming());
+
+      allow update: if isVerifiedUser()
+        && isValidId(linkId)
+        && isValidSmartLink(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'linkName',
+            'shortCode',
+            'originalUrl',
+            'destinationType',
+            'campaignId',
+            'status',
+            'updatedAt'
+          ]))
+          ||
+          (existing().ownerId == request.auth.uid
+            && existing().status != 'archived'
+            && isOwnedCampaignOrUnassigned(incoming())
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'linkName',
+              'shortCode',
+              'originalUrl',
+              'destinationType',
+              'campaignId',
+              'updatedAt'
+            ]))
+          ||
+          (existing().ownerId == request.auth.uid
+            && existing().status != 'archived'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(linkId) && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+  }
+}

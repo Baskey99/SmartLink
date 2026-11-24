@@ -1,0 +1,227 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated SmartLink user profile stored in Firestore with strict owner-only PII isolation.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID matching the document ID."
+        },
+        "fullName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Display name of the user."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "minLength": 3,
+          "maxLength": 254,
+          "description": "Verified email address of the user."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["user", "admin", "super_admin"],
+          "description": "Workspace role managed exclusively by administrators."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "inactive"],
+          "description": "Account activation status."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the latest profile update."
+        }
+      },
+      "required": ["uid", "fullName", "email", "role", "status", "createdAt", "updatedAt"]
+    },
+    "SmartLinkItem": {
+      "title": "SmartLinkItem",
+      "description": "Universal smart link document supporting mobile deep-link redirection and fallback settings.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the link creator."
+        },
+        "linkName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Human-readable name for the smart link."
+        },
+        "shortCode": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 32,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Unique short URL slug."
+        },
+        "originalUrl": {
+          "type": "string",
+          "format": "uri",
+          "minLength": 10,
+          "maxLength": 2048,
+          "pattern": "^https://.*",
+          "description": "Verified HTTPS destination URL."
+        },
+        "destinationType": {
+          "type": "string",
+          "enum": [
+            "youtube",
+            "whatsapp",
+            "instagram",
+            "google_maps",
+            "play_store",
+            "app_store",
+            "website",
+            "custom_app",
+            "other"
+          ],
+          "description": "Target application adapter key."
+        },
+        "campaignId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]*$",
+          "description": "Optional associated campaign document ID."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "inactive", "archived"],
+          "description": "Lifecycle status of the smart link."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the link was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the latest update."
+        }
+      },
+      "required": [
+        "ownerId",
+        "linkName",
+        "shortCode",
+        "originalUrl",
+        "destinationType",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CampaignItem": {
+      "title": "CampaignItem",
+      "description": "Marketing campaign grouping smart links with UTM attribution defaults.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the campaign owner."
+        },
+        "campaignName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Name of the campaign."
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Optional campaign summary."
+        },
+        "utmSource": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "Default UTM source."
+        },
+        "utmMedium": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "Default UTM medium."
+        },
+        "utmCampaign": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "Default UTM campaign."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "paused", "completed", "archived"],
+          "description": "Campaign lifecycle status (archived is terminal for non-admins)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the campaign was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the latest update."
+        }
+      },
+      "required": ["ownerId", "campaignName", "status", "createdAt", "updatedAt"]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Trusted administrator lookup record keyed by Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the administrator."
+        },
+        "grantedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when admin access was granted."
+        }
+      },
+      "required": ["uid", "grantedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Owner-isolated user profile documents."
+    },
+    "/smartLinks/{linkId}": {
+      "schema": { "$ref": "#/entities/SmartLinkItem" },
+      "description": "User-owned smart link records for Firestore CRUD operations."
+    },
+    "/campaigns/{campaignId}": {
+      "schema": { "$ref": "#/entities/CampaignItem" },
+      "description": "User-owned campaign records for grouping smart links."
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Trusted admin role lookup collection."
+    }
+  }
+}
