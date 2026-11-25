@@ -8,6 +8,7 @@ import {
   type SupportedAppRow,
 } from '../lib/firestore-service';
 import { useAuth } from '../context/AuthContext';
+import { showClassifiedErrorToast } from '../lib/firestore-errors';
 import {
   Button,
   ErrorState,
@@ -79,7 +80,7 @@ export function ApplicationsPage() {
       setEditing(null);
       void queryClient.invalidateQueries({ queryKey: ['supported-apps'] });
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => showClassifiedErrorToast(toast, err),
   });
 
   const openCreate = () => {

@@ -19,6 +19,7 @@ import {
 } from 'recharts';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
+import { showClassifiedErrorToast } from '../lib/firestore-errors';
 import {
   createCampaign,
   deleteCampaign,
@@ -126,7 +127,7 @@ export function CampaignsPage() {
       setEditing(null);
       void queryClient.invalidateQueries({ queryKey: ['campaigns'] });
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => showClassifiedErrorToast(toast, err),
   });
 
   const deleteMutation = useMutation({
@@ -139,7 +140,7 @@ export function CampaignsPage() {
       setDeleteTarget(null);
       void queryClient.invalidateQueries({ queryKey: ['campaigns'] });
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => showClassifiedErrorToast(toast, err),
   });
 
   const openCreate = () => {

@@ -18,6 +18,7 @@ import {
   listSupportedApps,
 } from '../lib/firestore-service';
 import { processDestinationUrl, type DestinationConfigJson } from '../lib/redirect-engine/index';
+import { showClassifiedErrorToast } from '../lib/firestore-errors';
 import { buildShortUrl, DESTINATION_LABELS } from '../lib/utils';
 import { Button, Input, Label, Modal, Panel, Select } from '../components/ui/primitives';
 import { RedirectPreviewModal, type PreviewLinkItem } from '../components/links/RedirectPreviewModal';
@@ -109,7 +110,7 @@ export function CreateSmartLinkPage() {
       void queryClient.invalidateQueries({ queryKey: ['dashboard-analytics'] });
     },
     onError: (err: Error) => {
-      toast.error(err.message || 'Failed to create smart link');
+      showClassifiedErrorToast(toast, err, 'Failed to create smart link');
     },
   });
 

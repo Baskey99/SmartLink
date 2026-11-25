@@ -20,6 +20,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/primitives';
+import { GlobalErrorBanner } from './GlobalErrorBanner';
 
 interface NavItem {
   to: string;
@@ -312,6 +313,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="flex-1 w-full max-w-[1360px] mx-auto px-3.5 sm:px-6 lg:px-8 py-5 sm:py-6 lg:py-8">
+          <GlobalErrorBanner />
           {children}
         </main>
       </div>

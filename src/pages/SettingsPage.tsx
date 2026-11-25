@@ -8,6 +8,7 @@ import {
   updateCurrentUserProfileName,
 } from '../lib/firestore-service';
 import { useAuth } from '../context/AuthContext';
+import { showClassifiedErrorToast } from '../lib/firestore-errors';
 import { Button, Input, Label, Panel, Skeleton, Textarea } from '../components/ui/primitives';
 
 interface SettingsMap {
@@ -67,7 +68,7 @@ export function SettingsPage() {
       await refreshProfile();
       toast.success('Profile updated');
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => showClassifiedErrorToast(toast, err),
   });
 
   const domainMutation = useMutation({
@@ -88,7 +89,7 @@ export function SettingsPage() {
       toast.success('Domain & mobile verification settings saved');
       void queryClient.invalidateQueries({ queryKey: ['app-settings'] });
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => showClassifiedErrorToast(toast, err),
   });
 
   return (

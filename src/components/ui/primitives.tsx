@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { AlertCircle, X } from 'lucide-react';
+import { AlertCircle, ShieldAlert, WifiOff, X } from 'lucide-react';
+import { classifyFirestoreError } from '../../lib/firestore-errors';
 import { cn } from '../../lib/utils';
 
 const buttonVariants = cva(
@@ -212,7 +213,7 @@ export function EmptyState({
 }
 
 export function ErrorState({
-  title = 'Unable to load data',
+  title,
   message,
   onRetry,
 }: {
@@ -220,17 +221,81 @@ export function ErrorState({
   message: string;
   onRetry?: () => void;
 }) {
+  const classified = classifyFirestoreError(message);
+  const isNetwork = classified.category === 'network' || classified.category === 'quota';
+  const Icon =
+    classified.category === 'network'
+      ? WifiOff
+      : classified.category === 'permission' || classified.category === 'auth'
+        ? ShieldAlert
+        : AlertCircle;
+
   return (
-    <div className="rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50/50 dark:bg-red-950/20 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
+    <div
+      role="alert"
+      className={cn(
+        'rounded-xl border p-4 sm:p-5 flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4',
+        isNetwork
+          ? 'border-amber-200 dark:border-amber-900/60 bg-amber-50/60 dark:bg-amber-950/20'
+          : 'border-red-200 dark:border-red-900/60 bg-red-50/50 dark:bg-red-950/20'
+      )}
+    >
       <div className="flex items-start gap-3 min-w-0">
-        <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
-        <div className="min-w-0">
-          <h4 className="text-sm font-semibold text-red-900 dark:text-red-200">{title}</h4>
-          <p className="text-sm text-red-700 dark:text-red-300/90 mt-0.5 break-words">{message}</p>
+        <Icon
+          className={cn(
+            'h-5 w-5 shrink-0 mt-0.5',
+            isNetwork
+              ? 'text-amber-600 dark:text-amber-400'
+              : 'text-red-600 dark:text-red-400'
+          )}
+        />
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={cn(
+                'inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide',
+                isNetwork
+                  ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300'
+                  : 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300'
+              )}
+            >
+              {classified.categoryLabel}
+            </span>
+            <h4
+              className={cn(
+                'text-sm font-semibold',
+                isNetwork
+                  ? 'text-amber-950 dark:text-amber-100'
+                  : 'text-red-900 dark:text-red-200'
+              )}
+            >
+              {title || classified.title}
+            </h4>
+          </div>
+          <p
+            className={cn(
+              'text-sm break-words',
+              isNetwork
+                ? 'text-amber-900/90 dark:text-amber-200/90'
+                : 'text-red-700 dark:text-red-300/90'
+            )}
+          >
+            {classified.message}
+          </p>
+          <p
+            className={cn(
+              'text-xs',
+              isNetwork
+                ? 'text-amber-800/80 dark:text-amber-300/80'
+                : 'text-red-700/80 dark:text-red-300/80'
+            )}
+          >
+            {classified.guidance}
+          </p>
         </div>
       </div>
       {onRetry && (
-        <Button variant="secondary" size="sm" onClick={onRetry} className="w-full sm:w-auto">
+        <Button variant="secondary" size="sm" onClick={onRetry} className="w-full sm:w-auto shrink-0">
           Retry
         </Button>
       )}

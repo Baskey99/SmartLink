@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
 import { auth, googleAuthProvider } from '../lib/firebase';
 import { syncUserProfile, type UserProfile } from '../lib/firestore-service';
+import { classifyFirestoreError } from '../lib/firestore-errors';
 
 export type { UserProfile };
 
@@ -19,19 +20,14 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 function formatAuthError(err: unknown): string {
   if (!err) return 'Could not load your account profile.';
-  const raw = err instanceof Error ? err.message : String(err);
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed.error === 'string') {
-      if (parsed.error.includes('Missing or insufficient permissions')) {
-        return 'Firestore permission denied while syncing your profile. Please sign out and sign in again.';
-      }
-      return parsed.error;
-    }
-  } catch {
-    // Plain message
+  const classified = classifyFirestoreError(err);
+  if (classified.category === 'network') {
+    return `${classified.title}: ${classified.message} ${classified.guidance}`;
   }
-  return raw;
+  if (classified.category === 'permission') {
+    return `${classified.title}: ${classified.message} ${classified.guidance}`;
+  }
+  return classified.message;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
+import { showClassifiedErrorToast } from '../lib/firestore-errors';
 import {
   deleteSmartLink,
   listCampaigns,
@@ -99,7 +100,7 @@ export function AllLinksPage() {
       );
       void queryClient.invalidateQueries({ queryKey: ['smart-links'] });
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => showClassifiedErrorToast(toast, err),
   });
 
   const deleteMutation = useMutation({
@@ -110,7 +111,7 @@ export function AllLinksPage() {
       void queryClient.invalidateQueries({ queryKey: ['smart-links'] });
       void queryClient.invalidateQueries({ queryKey: ['dashboard-analytics'] });
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => showClassifiedErrorToast(toast, err),
   });
 
   const updateMutation = useMutation({
@@ -127,7 +128,7 @@ export function AllLinksPage() {
       setEditTarget(null);
       void queryClient.invalidateQueries({ queryKey: ['smart-links'] });
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => showClassifiedErrorToast(toast, err),
   });
 
   const openEdit = (row: LinkRow) => {

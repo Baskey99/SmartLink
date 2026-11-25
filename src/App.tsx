@@ -1,9 +1,11 @@
 import React from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { GlobalErrorProvider, publishGlobalError } from './context/GlobalErrorContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { classifyFirestoreError } from './lib/firestore-errors';
 import { AppShell } from './components/layout/AppShell';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -19,10 +21,32 @@ import { ShortRedirectPage } from './pages/ShortRedirectPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (error) => {
+      publishGlobalError(error, 'query');
+    },
+  }),
+  mutationCache: new MutationCache({
+    onError: (error) => {
+      publishGlobalError(error, 'mutation');
+    },
+  }),
   defaultOptions: {
     queries: {
       staleTime: 20_000,
-      retry: 1,
+      retry: (failureCount, error) => {
+        const classified = classifyFirestoreError(error);
+        // Do not retry deterministic permission, auth, quota, or configuration errors
+        if (
+          classified.category === 'permission' ||
+          classified.category === 'auth' ||
+          classified.category === 'quota' ||
+          classified.category === 'config'
+        ) {
+          return false;
+        }
+        return failureCount < 1;
+      },
     },
   },
 });
@@ -175,13 +199,15 @@ export default function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
-          <AuthProvider>
-            <BrowserRouter>
-              <AppRoutes />
-            </BrowserRouter>
-          </AuthProvider>
-        </ThemeProvider>
+        <GlobalErrorProvider>
+          <ThemeProvider>
+            <AuthProvider>
+              <BrowserRouter>
+                <AppRoutes />
+              </BrowserRouter>
+            </AuthProvider>
+          </ThemeProvider>
+        </GlobalErrorProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );

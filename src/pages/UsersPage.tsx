@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { listAllUsers, updateUserRoleOrStatus } from '../lib/firestore-service';
 import { useAuth, type UserProfile } from '../context/AuthContext';
+import { showClassifiedErrorToast } from '../lib/firestore-errors';
 import { formatShortDate } from '../lib/utils';
 import { Button, ErrorState, Panel, Select, Skeleton } from '../components/ui/primitives';
 
@@ -26,7 +27,7 @@ export function UsersPage() {
       toast.success('User account updated');
       void queryClient.invalidateQueries({ queryKey: ['admin-users'] });
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => showClassifiedErrorToast(toast, err),
   });
 
   return (
