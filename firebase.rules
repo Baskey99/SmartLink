@@ -343,7 +343,7 @@ service cloud.firestore {
     // =========================================================================
     match /supportedApps/{appType} {
       allow get: if isValidTypeKey(appType);
-      allow list: if isVerifiedUser() && resource.data.appType is string;
+      allow list: if isVerifiedUser() && (resource.data.isActive == true || isBootstrappedAdmin());
       allow create: if isVerifiedUser()
         && isValidTypeKey(appType)
         && isValidSupportedApp(incoming(), appType)

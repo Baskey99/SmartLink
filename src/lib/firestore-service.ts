@@ -501,62 +501,84 @@ export async function updateUserRoleOrStatus(
 // 2. Supported Applications
 // =============================================================================
 
+function mapSupportedAppDoc(id: string, data: Record<string, unknown>): SupportedAppRow {
+  return {
+    id,
+    appName: String(data.appName || id),
+    appType: String(data.appType || id),
+    androidPackage: typeof data.androidPackage === 'string' ? data.androidPackage : null,
+    iosBundleIdentifier: typeof data.iosBundleIdentifier === 'string' ? data.iosBundleIdentifier : null,
+    androidAppLinkDomain: typeof data.androidAppLinkDomain === 'string' ? data.androidAppLinkDomain : null,
+    iosUniversalLinkDomain: typeof data.iosUniversalLinkDomain === 'string' ? data.iosUniversalLinkDomain : null,
+    deepLinkFormat: typeof data.deepLinkFormat === 'string' ? data.deepLinkFormat : null,
+    webFallbackUrl: typeof data.webFallbackUrl === 'string' ? data.webFallbackUrl : null,
+    appStoreUrl: typeof data.appStoreUrl === 'string' ? data.appStoreUrl : null,
+    playStoreUrl: typeof data.playStoreUrl === 'string' ? data.playStoreUrl : null,
+    configuration: (data.configuration as AppConfigurationJson) || {
+      supportsAppLinks: true,
+      supportsUniversalLinks: true,
+      storeRedirectEnabled: false,
+      documentedCapabilities: '',
+      allowedHosts: [],
+    },
+    isActive: Boolean(data.isActive),
+    createdAt: toIsoString(data.updatedAt),
+  };
+}
+
 export async function listSupportedApps(): Promise<SupportedAppRow[]> {
   const colPath = 'supportedApps';
+  const overrides = new Map<string, SupportedAppRow>();
+
   try {
-    // Query with where('appType', '>=', '') so Firestore QAP validates `resource.data.appType is string`
-    const q = query(collection(db, colPath), where('appType', '>=', ''));
+    // Match Firestore QAP rule: `resource.data.isActive == true || isBootstrappedAdmin()`
+    const q = isBootstrappedSuperAdmin(auth.currentUser?.email)
+      ? collection(db, colPath)
+      : query(collection(db, colPath), where('isActive', '==', true));
     const snap = await getDocs(q);
 
-    const overrides = new Map<string, SupportedAppRow>();
     for (const d of snap.docs) {
-      const data = d.data();
-      overrides.set(d.id, {
-        id: d.id,
-        appName: String(data.appName || d.id),
-        appType: String(data.appType || d.id),
-        androidPackage: typeof data.androidPackage === 'string' ? data.androidPackage : null,
-        iosBundleIdentifier: typeof data.iosBundleIdentifier === 'string' ? data.iosBundleIdentifier : null,
-        androidAppLinkDomain: typeof data.androidAppLinkDomain === 'string' ? data.androidAppLinkDomain : null,
-        iosUniversalLinkDomain: typeof data.iosUniversalLinkDomain === 'string' ? data.iosUniversalLinkDomain : null,
-        deepLinkFormat: typeof data.deepLinkFormat === 'string' ? data.deepLinkFormat : null,
-        webFallbackUrl: typeof data.webFallbackUrl === 'string' ? data.webFallbackUrl : null,
-        appStoreUrl: typeof data.appStoreUrl === 'string' ? data.appStoreUrl : null,
-        playStoreUrl: typeof data.playStoreUrl === 'string' ? data.playStoreUrl : null,
-        configuration: (data.configuration as AppConfigurationJson) || {
-          supportsAppLinks: true,
-          supportsUniversalLinks: true,
-          storeRedirectEnabled: false,
-          documentedCapabilities: '',
-          allowedHosts: [],
-        },
-        isActive: Boolean(data.isActive),
-        createdAt: toIsoString(data.updatedAt),
-      });
+      overrides.set(d.id, mapSupportedAppDoc(d.id, d.data()));
     }
-
-    const merged: SupportedAppRow[] = DEFAULT_SUPPORTED_APPS.map((def) => {
-      const override = overrides.get(def.appType);
-      if (override) {
-        overrides.delete(def.appType);
-        return override;
-      }
-      return {
-        ...def,
-        id: def.appType,
-        createdAt: new Date().toISOString(),
-      };
-    });
-
-    // Append any custom apps added by Super Admin
-    for (const customApp of overrides.values()) {
-      merged.push(customApp);
-    }
-
-    return merged;
   } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, colPath);
+    // Fallback to single-doc `get` reads (allowed by `allow get: if isValidTypeKey(appType)`)
+    // so built-in app overrides still load even if manual console rules lag behind.
+    const msg = error instanceof Error ? error.message : String(error);
+    if (msg.includes('Missing or insufficient permissions') || msg.includes('permission-denied')) {
+      const snaps = await Promise.all(
+        DEFAULT_SUPPORTED_APPS.map((def) =>
+          getDoc(doc(db, colPath, def.appType)).catch(() => null)
+        )
+      );
+      for (const s of snaps) {
+        if (s && s.exists()) {
+          overrides.set(s.id, mapSupportedAppDoc(s.id, s.data()));
+        }
+      }
+    } else {
+      handleFirestoreError(error, OperationType.LIST, colPath);
+    }
   }
+
+  const merged: SupportedAppRow[] = DEFAULT_SUPPORTED_APPS.map((def) => {
+    const override = overrides.get(def.appType);
+    if (override) {
+      overrides.delete(def.appType);
+      return override;
+    }
+    return {
+      ...def,
+      id: def.appType,
+      createdAt: new Date().toISOString(),
+    };
+  });
+
+  // Append any custom apps added by Super Admin
+  for (const customApp of overrides.values()) {
+    merged.push(customApp);
+  }
+
+  return merged;
 }
 
 export async function getSupportedAppByType(appType: string): Promise<SupportedAppRow | null> {
