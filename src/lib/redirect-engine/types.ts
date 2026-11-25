@@ -1,4 +1,27 @@
-import type { AppConfigurationJson, DestinationConfigJson } from '../../db/schema.ts';
+export interface AppConfigurationJson {
+  supportsAppLinks: boolean;
+  supportsUniversalLinks: boolean;
+  androidIntentScheme?: string;
+  iosCustomScheme?: string;
+  storeRedirectEnabled: boolean;
+  documentedCapabilities: string;
+  allowedHosts: string[];
+}
+
+export interface DestinationConfigJson {
+  contentId?: string;
+  contentKind?: string;
+  androidAppLink?: string;
+  androidIntentUrl?: string;
+  iosUniversalLink?: string;
+  iosSchemeUrl?: string;
+  webFallbackUrl: string;
+  fallbackPreference: 'app_first' | 'web_only' | 'interstitial_always';
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  customDomain?: string;
+}
 
 export type DestinationType =
   | 'youtube'

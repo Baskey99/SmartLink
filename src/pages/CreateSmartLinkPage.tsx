@@ -17,8 +17,7 @@ import {
   listCampaigns,
   listSupportedApps,
 } from '../lib/firestore-service';
-import { processDestinationUrl } from '../lib/redirect-engine/index';
-import type { DestinationConfigJson } from '../db/schema';
+import { processDestinationUrl, type DestinationConfigJson } from '../lib/redirect-engine/index';
 import { buildShortUrl, DESTINATION_LABELS } from '../lib/utils';
 import { Button, Input, Label, Modal, Panel, Select } from '../components/ui/primitives';
 import { RedirectPreviewModal, type PreviewLinkItem } from '../components/links/RedirectPreviewModal';

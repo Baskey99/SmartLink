@@ -1,6 +1,6 @@
-import type { DestinationConfigJson } from '../../db/schema.ts';
 import { ADAPTER_REGISTRY, ORDERED_DETECT_ADAPTERS, getAdapter } from './adapters.ts';
 import type {
+  DestinationConfigJson,
   DestinationType,
   DeviceContext,
   ProcessedUrlResult,

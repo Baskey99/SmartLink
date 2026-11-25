@@ -1,6 +1,6 @@
-import type { DestinationConfigJson } from '../../db/schema.ts';
 import type {
   ApplicationAdapter,
+  DestinationConfigJson,
   DestinationType,
   DeviceContext,
   ProcessedUrlResult,

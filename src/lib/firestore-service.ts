@@ -21,7 +21,9 @@ import {
   isReservedShortCode,
   processDestinationUrl,
   validateShortCode,
+  type AppConfigurationJson,
   type BrowserEnvironment,
+  type DestinationConfigJson,
   type DeviceCategory,
   type DevicePlatform,
   type ProcessedUrlResult,
@@ -29,7 +31,6 @@ import {
   type ReferralSource,
   type SupportedAppRecord,
 } from './redirect-engine/index';
-import type { AppConfigurationJson, DestinationConfigJson } from '../db/schema';
 
 export const BOOTSTRAPPED_SUPER_ADMIN_EMAIL = 'amitbaskey99@gmail.com';
 
