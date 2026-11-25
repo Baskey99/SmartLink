@@ -1,7 +1,7 @@
 import React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { apiRequest } from '../lib/api';
+import { listAllUsers, updateUserRoleOrStatus } from '../lib/firestore-service';
 import { useAuth, type UserProfile } from '../context/AuthContext';
 import { formatShortDate } from '../lib/utils';
 import { Button, ErrorState, Panel, Select, Skeleton } from '../components/ui/primitives';
@@ -11,18 +11,16 @@ export function UsersPage() {
   const queryClient = useQueryClient();
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['admin-users'],
-    queryFn: () => apiRequest<{ users: UserProfile[] }>('/api/users'),
+    queryKey: ['admin-users', currentUser?.id],
+    queryFn: async () => ({ users: await listAllUsers(currentUser!) }),
+    enabled: Boolean(currentUser),
   });
 
   const updateMutation = useMutation({
     mutationFn: (payload: { id: string; role?: UserProfile['role']; status?: UserProfile['status'] }) =>
-      apiRequest(`/api/users/${payload.id}`, {
-        method: 'PUT',
-        body: {
-          ...(payload.role ? { role: payload.role } : {}),
-          ...(payload.status ? { status: payload.status } : {}),
-        },
+      updateUserRoleOrStatus(payload.id, currentUser!, {
+        role: payload.role,
+        status: payload.status,
       }),
     onSuccess: () => {
       toast.success('User account updated');
@@ -32,9 +30,9 @@ export function UsersPage() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       <div>
-        <h1 className="font-display text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
+        <h1 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
           User Management
         </h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
@@ -50,7 +48,87 @@ export function UsersPage() {
       )}
 
       <Panel className="overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Mobile Stacked Cards (< md) */}
+        <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
+          {isLoading
+            ? Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="p-4 space-y-2.5">
+                  <Skeleton className="h-5 w-40" />
+                  <Skeleton className="h-4 w-56" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              ))
+            : (data?.users || []).map((user) => {
+                const isSelf = user.id === currentUser?.id;
+                return (
+                  <div key={user.id} className="p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-slate-950 dark:text-white truncate">
+                          {user.fullName}{' '}
+                          {isSelf && (
+                            <span className="text-xs font-normal text-slate-500">(You)</span>
+                          )}
+                        </div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                          {user.email}
+                        </div>
+                      </div>
+                      <span
+                        className={`text-xs font-medium shrink-0 ${
+                          user.status === 'active'
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-red-600 dark:text-red-400'
+                        }`}
+                      >
+                        {user.status === 'active' ? 'Active' : 'Deactivated'}
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                      Joined {formatShortDate(user.createdAt)}
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 pt-1">
+                      <div className="flex-1">
+                        <Select
+                          aria-label={`Role for ${user.email}`}
+                          value={user.role}
+                          disabled={isSelf || updateMutation.isPending}
+                          onChange={(e) =>
+                            updateMutation.mutate({
+                              id: user.id,
+                              role: e.target.value as UserProfile['role'],
+                            })
+                          }
+                        >
+                          <option value="super_admin">Super Admin</option>
+                          <option value="admin">Admin</option>
+                          <option value="user">User</option>
+                        </Select>
+                      </div>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="w-full sm:w-auto"
+                        disabled={isSelf || updateMutation.isPending}
+                        onClick={() =>
+                          updateMutation.mutate({
+                            id: user.id,
+                            status: user.status === 'active' ? 'inactive' : 'active',
+                          })
+                        }
+                      >
+                        {user.status === 'active' ? 'Deactivate' : 'Activate'}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+        </div>
+
+        {/* Tablet & Desktop Table (md+) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -85,7 +163,7 @@ export function UsersPage() {
                             {user.email}
                           </div>
                         </td>
-                        <td className="py-3.5 px-4 w-48">
+                        <td className="py-3.5 px-4 w-44 lg:w-48">
                           <Select
                             aria-label={`Role for ${user.email}`}
                             value={user.role}
@@ -103,7 +181,7 @@ export function UsersPage() {
                             <option value="user">User</option>
                           </Select>
                         </td>
-                        <td className="py-3.5 px-4 text-xs font-medium">
+                        <td className="py-3.5 px-4 text-xs font-medium whitespace-nowrap">
                           <span
                             className={
                               user.status === 'active'
@@ -114,10 +192,10 @@ export function UsersPage() {
                             {user.status === 'active' ? 'Active' : 'Deactivated'}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                        <td className="py-3.5 px-4 text-xs text-slate-500 dark:text-slate-400 tabular-nums whitespace-nowrap">
                           {formatShortDate(user.createdAt)}
                         </td>
-                        <td className="py-3.5 px-4 text-right">
+                        <td className="py-3.5 px-4 text-right whitespace-nowrap">
                           <Button
                             variant="secondary"
                             size="sm"

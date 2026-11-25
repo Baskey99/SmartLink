@@ -2,7 +2,7 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Pillar 0: Global default-deny safety net
+    // Global default-deny safety net
     match /{document=**} {
       allow read, write: if false;
     }
@@ -22,6 +22,10 @@ service cloud.firestore {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidTypeKey(key) {
+      return key is string && key.size() >= 2 && key.size() <= 40 && key.matches('^[a-z0-9_]+$');
+    }
+
     function incoming() {
       return request.resource.data;
     }
@@ -31,7 +35,9 @@ service cloud.firestore {
     }
 
     function isBootstrappedAdmin() {
-      return isVerifiedUser() && request.auth.token.email == 'amitbaskey99@gmail.com';
+      return isVerifiedUser()
+        && request.auth.token.email is string
+        && request.auth.token.email.lower() == 'amitbaskey99@gmail.com';
     }
 
     function isAdmin() {
@@ -44,59 +50,56 @@ service cloud.firestore {
     // =========================================================================
     function isValidUserProfile(data, userId) {
       return data.keys().hasAll(['uid', 'fullName', 'email', 'role', 'status', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['uid', 'fullName', 'email', 'role', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'fullName', 'email', 'avatarUrl', 'role', 'status', 'createdAt', 'updatedAt'])
         && isValidId(data.uid)
         && data.uid == userId
         && data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 100
         && data.email is string && data.email.size() >= 3 && data.email.size() <= 254
+        && (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 1024))
         && data.role in ['user', 'admin', 'super_admin']
         && data.status in ['active', 'inactive']
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
 
-    function isValidSmartLink(data) {
-      return data.keys().hasAll([
-          'ownerId',
-          'linkName',
-          'shortCode',
-          'originalUrl',
-          'destinationType',
-          'status',
-          'createdAt',
-          'updatedAt'
-        ])
+    function isValidAdminRecord(data, adminId) {
+      return data.keys().hasAll(['uid', 'grantedAt'])
+        && data.keys().hasOnly(['uid', 'grantedAt'])
+        && isValidId(data.uid)
+        && data.uid == adminId
+        && data.grantedAt is timestamp;
+    }
+
+    function isValidSupportedApp(data, appType) {
+      return data.keys().hasAll(['appName', 'appType', 'configuration', 'isActive', 'updatedAt'])
         && data.keys().hasOnly([
-          'ownerId',
-          'linkName',
-          'shortCode',
-          'originalUrl',
-          'destinationType',
-          'campaignId',
-          'status',
-          'createdAt',
+          'appName',
+          'appType',
+          'androidPackage',
+          'iosBundleIdentifier',
+          'androidAppLinkDomain',
+          'iosUniversalLinkDomain',
+          'deepLinkFormat',
+          'webFallbackUrl',
+          'appStoreUrl',
+          'playStoreUrl',
+          'configuration',
+          'isActive',
           'updatedAt'
         ])
-        && isValidId(data.ownerId)
-        && data.linkName is string && data.linkName.size() >= 1 && data.linkName.size() <= 120
-        && data.shortCode is string && data.shortCode.size() >= 3 && data.shortCode.size() <= 32
-        && data.shortCode.matches('^[a-zA-Z0-9_\\-]+$')
-        && data.originalUrl is string && data.originalUrl.size() >= 10 && data.originalUrl.size() <= 2048
-        && data.originalUrl.matches('^https://.*')
-        && data.destinationType in [
-          'youtube',
-          'whatsapp',
-          'instagram',
-          'google_maps',
-          'play_store',
-          'app_store',
-          'website',
-          'custom_app',
-          'other'
-        ]
-        && (!('campaignId' in data) || (data.campaignId is string && data.campaignId.size() <= 128 && data.campaignId.matches('^[a-zA-Z0-9_\\-]*$')))
-        && data.status in ['active', 'inactive', 'archived']
-        && data.createdAt is timestamp
+        && data.appName is string && data.appName.size() >= 2 && data.appName.size() <= 80
+        && isValidTypeKey(data.appType)
+        && data.appType == appType
+        && (!('androidPackage' in data) || (data.androidPackage is string && data.androidPackage.size() <= 160))
+        && (!('iosBundleIdentifier' in data) || (data.iosBundleIdentifier is string && data.iosBundleIdentifier.size() <= 160))
+        && (!('androidAppLinkDomain' in data) || (data.androidAppLinkDomain is string && data.androidAppLinkDomain.size() <= 160))
+        && (!('iosUniversalLinkDomain' in data) || (data.iosUniversalLinkDomain is string && data.iosUniversalLinkDomain.size() <= 160))
+        && (!('deepLinkFormat' in data) || (data.deepLinkFormat is string && data.deepLinkFormat.size() <= 240))
+        && (!('webFallbackUrl' in data) || (data.webFallbackUrl is string && data.webFallbackUrl.size() <= 300))
+        && (!('appStoreUrl' in data) || (data.appStoreUrl is string && data.appStoreUrl.size() <= 300))
+        && (!('playStoreUrl' in data) || (data.playStoreUrl is string && data.playStoreUrl.size() <= 300))
+        && data.configuration is map
+        && data.isActive is bool
         && data.updatedAt is timestamp;
     }
 
@@ -109,6 +112,8 @@ service cloud.firestore {
           'utmSource',
           'utmMedium',
           'utmCampaign',
+          'startDate',
+          'endDate',
           'status',
           'createdAt',
           'updatedAt'
@@ -119,17 +124,161 @@ service cloud.firestore {
         && (!('utmSource' in data) || (data.utmSource is string && data.utmSource.size() <= 80))
         && (!('utmMedium' in data) || (data.utmMedium is string && data.utmMedium.size() <= 80))
         && (!('utmCampaign' in data) || (data.utmCampaign is string && data.utmCampaign.size() <= 80))
+        && (!('startDate' in data) || (data.startDate is string && data.startDate.size() <= 40))
+        && (!('endDate' in data) || (data.endDate is string && data.endDate.size() <= 40))
         && data.status in ['active', 'paused', 'completed', 'archived']
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
 
-    function isValidAdminRecord(data, adminId) {
-      return data.keys().hasAll(['uid', 'grantedAt'])
-        && data.keys().hasOnly(['uid', 'grantedAt'])
-        && isValidId(data.uid)
-        && data.uid == adminId
-        && data.grantedAt is timestamp;
+    function isValidSmartLink(data) {
+      return data.keys().hasAll([
+          'ownerId',
+          'linkName',
+          'shortCode',
+          'originalUrl',
+          'normalizedUrl',
+          'destinationType',
+          'destinationConfig',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId',
+          'linkName',
+          'shortCode',
+          'originalUrl',
+          'normalizedUrl',
+          'destinationType',
+          'destinationConfig',
+          'campaignId',
+          'status',
+          'expiresAt',
+          'createdAt',
+          'updatedAt'
+        ])
+        && isValidId(data.ownerId)
+        && data.linkName is string && data.linkName.size() >= 1 && data.linkName.size() <= 120
+        && data.shortCode is string && data.shortCode.size() >= 3 && data.shortCode.size() <= 32
+        && data.shortCode.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.originalUrl is string && data.originalUrl.size() >= 10 && data.originalUrl.size() <= 2048
+        && data.originalUrl.matches('^https://.*')
+        && data.normalizedUrl is string && data.normalizedUrl.size() >= 10 && data.normalizedUrl.size() <= 2048
+        && data.normalizedUrl.matches('^https://.*')
+        && isValidTypeKey(data.destinationType)
+        && data.destinationConfig is map
+        && (!('campaignId' in data) || (data.campaignId is string && data.campaignId.size() <= 128 && data.campaignId.matches('^[a-zA-Z0-9_\\-]*$')))
+        && (!('expiresAt' in data) || (data.expiresAt is string && data.expiresAt.size() <= 40))
+        && data.status in ['active', 'inactive', 'archived']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPublicLinkRoute(data, shortCode) {
+      return data.keys().hasAll([
+          'shortCode',
+          'smartLinkId',
+          'ownerId',
+          'linkName',
+          'normalizedUrl',
+          'destinationType',
+          'destinationConfig',
+          'status',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'shortCode',
+          'smartLinkId',
+          'ownerId',
+          'linkName',
+          'normalizedUrl',
+          'destinationType',
+          'destinationConfig',
+          'campaignId',
+          'status',
+          'expiresAt',
+          'updatedAt'
+        ])
+        && data.shortCode == shortCode
+        && data.shortCode is string && data.shortCode.size() >= 3 && data.shortCode.size() <= 32
+        && data.shortCode.matches('^[a-zA-Z0-9_\\-]+$')
+        && isValidId(data.smartLinkId)
+        && isValidId(data.ownerId)
+        && data.linkName is string && data.linkName.size() >= 1 && data.linkName.size() <= 120
+        && data.normalizedUrl is string && data.normalizedUrl.size() >= 10 && data.normalizedUrl.size() <= 2048
+        && data.normalizedUrl.matches('^https://.*')
+        && isValidTypeKey(data.destinationType)
+        && data.destinationConfig is map
+        && (!('campaignId' in data) || (data.campaignId is string && data.campaignId.size() <= 128 && data.campaignId.matches('^[a-zA-Z0-9_\\-]*$')))
+        && (!('expiresAt' in data) || (data.expiresAt is string && data.expiresAt.size() <= 40))
+        && data.status in ['active', 'inactive', 'archived']
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidClickEvent(data) {
+      return data.keys().hasAll([
+          'smartLinkId',
+          'shortCode',
+          'ownerId',
+          'destinationType',
+          'platform',
+          'deviceCategory',
+          'browser',
+          'referralSource',
+          'redirectOutcome',
+          'clickedAt'
+        ])
+        && data.keys().hasOnly([
+          'smartLinkId',
+          'shortCode',
+          'ownerId',
+          'destinationType',
+          'campaignId',
+          'platform',
+          'deviceCategory',
+          'browser',
+          'referralSource',
+          'redirectOutcome',
+          'dedupHash',
+          'clickedAt'
+        ])
+        && isValidId(data.smartLinkId)
+        && data.shortCode is string && data.shortCode.size() >= 3 && data.shortCode.size() <= 32
+        && data.shortCode.matches('^[a-zA-Z0-9_\\-]+$')
+        && isValidId(data.ownerId)
+        && isValidTypeKey(data.destinationType)
+        && (!('campaignId' in data) || (data.campaignId is string && data.campaignId.size() <= 128 && data.campaignId.matches('^[a-zA-Z0-9_\\-]*$')))
+        && data.platform in ['android', 'ios', 'desktop', 'other']
+        && data.deviceCategory in ['mobile', 'tablet', 'desktop']
+        && data.browser in [
+          'instagram_inapp',
+          'facebook_inapp',
+          'android_chrome',
+          'ios_safari',
+          'mobile_browser',
+          'desktop_browser'
+        ]
+        && data.referralSource in ['instagram', 'whatsapp', 'facebook', 'youtube', 'qr_code', 'direct', 'other']
+        && data.redirectOutcome in [
+          'redirect_attempted',
+          'app_launch_attempted',
+          'fallback_shown',
+          'manual_app_click',
+          'manual_browser_click',
+          'direct_web_redirect'
+        ]
+        && (!('dedupHash' in data) || (data.dedupHash is string && data.dedupHash.size() <= 64))
+        && data.clickedAt is timestamp;
+    }
+
+    function isValidAppSetting(data, settingKey) {
+      return data.keys().hasAll(['settingKey', 'settingValue', 'updatedAt'])
+        && data.keys().hasOnly(['settingKey', 'settingValue', 'updatedAt'])
+        && data.settingKey in ['domain_config', 'privacy_config']
+        && data.settingKey == settingKey
+        && data.settingValue is map
+        && data.updatedAt is timestamp;
     }
 
     function isOwnedCampaignOrUnassigned(data) {
@@ -167,8 +316,9 @@ service cloud.firestore {
         && isValidId(userId)
         && isValidUserProfile(incoming(), userId)
         && incoming().uid == request.auth.uid
-        && incoming().email == request.auth.token.email
-        && incoming().role == 'user'
+        && request.auth.token.email is string
+        && incoming().email.lower() == request.auth.token.email.lower()
+        && (incoming().role == 'user' || (isBootstrappedAdmin() && incoming().role == 'super_admin'))
         && incoming().status == 'active'
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
@@ -180,12 +330,46 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && (
-          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'status', 'fullName', 'updatedAt']))
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'status', 'fullName', 'avatarUrl', 'updatedAt']))
           ||
-          (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'updatedAt']))
+          (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'avatarUrl', 'updatedAt']))
         );
 
       allow delete: if isVerifiedUser() && isValidId(userId) && isAdmin();
+    }
+
+    // =========================================================================
+    // Collection: /supportedApps/{appType}
+    // =========================================================================
+    match /supportedApps/{appType} {
+      allow get: if isValidTypeKey(appType);
+      allow list: if isVerifiedUser() && resource.data.appType is string;
+      allow create: if isVerifiedUser()
+        && isValidTypeKey(appType)
+        && isValidSupportedApp(incoming(), appType)
+        && incoming().updatedAt == request.time
+        && isAdmin();
+      allow update: if isVerifiedUser()
+        && isValidTypeKey(appType)
+        && isValidSupportedApp(incoming(), appType)
+        && incoming().appType == existing().appType
+        && incoming().updatedAt == request.time
+        && isAdmin()
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'appName',
+          'androidPackage',
+          'iosBundleIdentifier',
+          'androidAppLinkDomain',
+          'iosUniversalLinkDomain',
+          'deepLinkFormat',
+          'webFallbackUrl',
+          'appStoreUrl',
+          'playStoreUrl',
+          'configuration',
+          'isActive',
+          'updatedAt'
+        ]);
+      allow delete: if false;
     }
 
     // =========================================================================
@@ -215,6 +399,8 @@ service cloud.firestore {
             'utmSource',
             'utmMedium',
             'utmCampaign',
+            'startDate',
+            'endDate',
             'status',
             'updatedAt'
           ]))
@@ -227,6 +413,8 @@ service cloud.firestore {
               'utmSource',
               'utmMedium',
               'utmCampaign',
+              'startDate',
+              'endDate',
               'updatedAt'
             ]))
           ||
@@ -251,7 +439,8 @@ service cloud.firestore {
         && incoming().ownerId == request.auth.uid
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
-        && isOwnedCampaignOrUnassigned(incoming());
+        && isOwnedCampaignOrUnassigned(incoming())
+        && existsAfter(/databases/$(database)/documents/publicLinks/$(incoming().shortCode));
 
       allow update: if isVerifiedUser()
         && isValidId(linkId)
@@ -264,8 +453,11 @@ service cloud.firestore {
             'linkName',
             'shortCode',
             'originalUrl',
+            'normalizedUrl',
             'destinationType',
+            'destinationConfig',
             'campaignId',
+            'expiresAt',
             'status',
             'updatedAt'
           ]))
@@ -277,8 +469,11 @@ service cloud.firestore {
               'linkName',
               'shortCode',
               'originalUrl',
+              'normalizedUrl',
               'destinationType',
+              'destinationConfig',
               'campaignId',
+              'expiresAt',
               'updatedAt'
             ]))
           ||
@@ -288,6 +483,92 @@ service cloud.firestore {
         );
 
       allow delete: if isVerifiedUser() && isValidId(linkId) && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    // =========================================================================
+    // Collection: /publicLinks/{shortCode} (Single-doc public lookup, no list)
+    // =========================================================================
+    match /publicLinks/{shortCode} {
+      allow get: if isValidId(shortCode);
+      allow list: if false;
+
+      allow create: if isVerifiedUser()
+        && isValidId(shortCode)
+        && isValidPublicLinkRoute(incoming(), shortCode)
+        && (incoming().ownerId == request.auth.uid || isAdmin())
+        && incoming().updatedAt == request.time
+        && existsAfter(/databases/$(database)/documents/smartLinks/$(incoming().smartLinkId));
+
+      allow update: if isVerifiedUser()
+        && isValidId(shortCode)
+        && isValidPublicLinkRoute(incoming(), shortCode)
+        && incoming().ownerId == existing().ownerId
+        && incoming().smartLinkId == existing().smartLinkId
+        && incoming().updatedAt == request.time
+        && (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'linkName',
+            'normalizedUrl',
+            'destinationType',
+            'destinationConfig',
+            'campaignId',
+            'expiresAt',
+            'status',
+            'updatedAt'
+          ]))
+          ||
+          (existing().ownerId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly([
+            'linkName',
+            'normalizedUrl',
+            'destinationType',
+            'destinationConfig',
+            'campaignId',
+            'expiresAt',
+            'status',
+            'updatedAt'
+          ]))
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(shortCode) && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    // =========================================================================
+    // Collection: /clickEvents/{eventId} (Privacy-safe append-only analytics)
+    // =========================================================================
+    match /clickEvents/{eventId} {
+      allow get: if isVerifiedUser() && isValidId(eventId) && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isVerifiedUser() && (resource.data.ownerId == request.auth.uid || isBootstrappedAdmin());
+
+      allow create: if isValidId(eventId)
+        && isValidClickEvent(incoming())
+        && incoming().clickedAt == request.time
+        && exists(/databases/$(database)/documents/publicLinks/$(incoming().shortCode))
+        && get(/databases/$(database)/documents/publicLinks/$(incoming().shortCode)).data.ownerId == incoming().ownerId
+        && get(/databases/$(database)/documents/publicLinks/$(incoming().shortCode)).data.smartLinkId == incoming().smartLinkId;
+
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // =========================================================================
+    // Collection: /appSettings/{settingKey}
+    // =========================================================================
+    match /appSettings/{settingKey} {
+      allow get: if isVerifiedUser() && settingKey in ['domain_config', 'privacy_config'];
+      allow list: if isVerifiedUser() && resource.data.settingKey in ['domain_config', 'privacy_config'];
+      allow create: if isVerifiedUser()
+        && settingKey in ['domain_config', 'privacy_config']
+        && isValidAppSetting(incoming(), settingKey)
+        && incoming().updatedAt == request.time
+        && isAdmin();
+      allow update: if isVerifiedUser()
+        && settingKey in ['domain_config', 'privacy_config']
+        && isValidAppSetting(incoming(), settingKey)
+        && incoming().settingKey == existing().settingKey
+        && incoming().updatedAt == request.time
+        && isAdmin()
+        && incoming().diff(existing()).affectedKeys().hasOnly(['settingValue', 'updatedAt']);
+      allow delete: if false;
     }
   }
 }

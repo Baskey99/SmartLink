@@ -25,6 +25,11 @@
           "maxLength": 254,
           "description": "Verified email address of the user."
         },
+        "avatarUrl": {
+          "type": "string",
+          "maxLength": 1024,
+          "description": "Optional profile avatar HTTPS URL."
+        },
         "role": {
           "type": "string",
           "enum": ["user", "admin", "super_admin"],
@@ -48,143 +53,6 @@
       },
       "required": ["uid", "fullName", "email", "role", "status", "createdAt", "updatedAt"]
     },
-    "SmartLinkItem": {
-      "title": "SmartLinkItem",
-      "description": "Universal smart link document supporting mobile deep-link redirection and fallback settings.",
-      "type": "object",
-      "properties": {
-        "ownerId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[a-zA-Z0-9_\\-]+$",
-          "description": "Firebase Auth UID of the link creator."
-        },
-        "linkName": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 120,
-          "description": "Human-readable name for the smart link."
-        },
-        "shortCode": {
-          "type": "string",
-          "minLength": 3,
-          "maxLength": 32,
-          "pattern": "^[a-zA-Z0-9_\\-]+$",
-          "description": "Unique short URL slug."
-        },
-        "originalUrl": {
-          "type": "string",
-          "format": "uri",
-          "minLength": 10,
-          "maxLength": 2048,
-          "pattern": "^https://.*",
-          "description": "Verified HTTPS destination URL."
-        },
-        "destinationType": {
-          "type": "string",
-          "enum": [
-            "youtube",
-            "whatsapp",
-            "instagram",
-            "google_maps",
-            "play_store",
-            "app_store",
-            "website",
-            "custom_app",
-            "other"
-          ],
-          "description": "Target application adapter key."
-        },
-        "campaignId": {
-          "type": "string",
-          "maxLength": 128,
-          "pattern": "^[a-zA-Z0-9_\\-]*$",
-          "description": "Optional associated campaign document ID."
-        },
-        "status": {
-          "type": "string",
-          "enum": ["active", "inactive", "archived"],
-          "description": "Lifecycle status of the smart link."
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Server timestamp when the link was created."
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Server timestamp of the latest update."
-        }
-      },
-      "required": [
-        "ownerId",
-        "linkName",
-        "shortCode",
-        "originalUrl",
-        "destinationType",
-        "status",
-        "createdAt",
-        "updatedAt"
-      ]
-    },
-    "CampaignItem": {
-      "title": "CampaignItem",
-      "description": "Marketing campaign grouping smart links with UTM attribution defaults.",
-      "type": "object",
-      "properties": {
-        "ownerId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[a-zA-Z0-9_\\-]+$",
-          "description": "Firebase Auth UID of the campaign owner."
-        },
-        "campaignName": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 120,
-          "description": "Name of the campaign."
-        },
-        "description": {
-          "type": "string",
-          "maxLength": 500,
-          "description": "Optional campaign summary."
-        },
-        "utmSource": {
-          "type": "string",
-          "maxLength": 80,
-          "description": "Default UTM source."
-        },
-        "utmMedium": {
-          "type": "string",
-          "maxLength": 80,
-          "description": "Default UTM medium."
-        },
-        "utmCampaign": {
-          "type": "string",
-          "maxLength": 80,
-          "description": "Default UTM campaign."
-        },
-        "status": {
-          "type": "string",
-          "enum": ["active", "paused", "completed", "archived"],
-          "description": "Campaign lifecycle status (archived is terminal for non-admins)."
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Server timestamp when the campaign was created."
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Server timestamp of the latest update."
-        }
-      },
-      "required": ["ownerId", "campaignName", "status", "createdAt", "updatedAt"]
-    },
     "AdminRecord": {
       "title": "AdminRecord",
       "description": "Trusted administrator lookup record keyed by Firebase Auth UID.",
@@ -204,6 +72,171 @@
         }
       },
       "required": ["uid", "grantedAt"]
+    },
+    "SupportedApp": {
+      "title": "SupportedApp",
+      "description": "Extensible application adapter configuration for mobile deep linking and web fallbacks.",
+      "type": "object",
+      "properties": {
+        "appName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "appType": { "type": "string", "minLength": 2, "maxLength": 40, "pattern": "^[a-z0-9_]+$" },
+        "androidPackage": { "type": "string", "maxLength": 160 },
+        "iosBundleIdentifier": { "type": "string", "maxLength": 160 },
+        "androidAppLinkDomain": { "type": "string", "maxLength": 160 },
+        "iosUniversalLinkDomain": { "type": "string", "maxLength": 160 },
+        "deepLinkFormat": { "type": "string", "maxLength": 240 },
+        "webFallbackUrl": { "type": "string", "maxLength": 300 },
+        "appStoreUrl": { "type": "string", "maxLength": 300 },
+        "playStoreUrl": { "type": "string", "maxLength": 300 },
+        "configuration": { "type": "object" },
+        "isActive": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["appName", "appType", "configuration", "isActive", "updatedAt"]
+    },
+    "CampaignItem": {
+      "title": "CampaignItem",
+      "description": "Marketing campaign grouping smart links with UTM attribution defaults.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campaignName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 500 },
+        "utmSource": { "type": "string", "maxLength": 80 },
+        "utmMedium": { "type": "string", "maxLength": 80 },
+        "utmCampaign": { "type": "string", "maxLength": 80 },
+        "startDate": { "type": "string", "maxLength": 40 },
+        "endDate": { "type": "string", "maxLength": 40 },
+        "status": { "type": "string", "enum": ["active", "paused", "completed", "archived"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "campaignName", "status", "createdAt", "updatedAt"]
+    },
+    "SmartLinkItem": {
+      "title": "SmartLinkItem",
+      "description": "User-owned universal smart link document with normalized deep-link configuration.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "linkName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "shortCode": { "type": "string", "minLength": 3, "maxLength": 32, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "originalUrl": { "type": "string", "format": "uri", "minLength": 10, "maxLength": 2048, "pattern": "^https://.*" },
+        "normalizedUrl": { "type": "string", "format": "uri", "minLength": 10, "maxLength": 2048, "pattern": "^https://.*" },
+        "destinationType": { "type": "string", "minLength": 2, "maxLength": 40, "pattern": "^[a-z0-9_]+$" },
+        "destinationConfig": { "type": "object" },
+        "campaignId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]*$" },
+        "status": { "type": "string", "enum": ["active", "inactive", "archived"] },
+        "expiresAt": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "ownerId",
+        "linkName",
+        "shortCode",
+        "originalUrl",
+        "normalizedUrl",
+        "destinationType",
+        "destinationConfig",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PublicLinkRoute": {
+      "title": "PublicLinkRoute",
+      "description": "Non-PII public short-code resolution document keyed by shortCode for unauthenticated redirection without exposing list enumeration.",
+      "type": "object",
+      "properties": {
+        "shortCode": { "type": "string", "minLength": 3, "maxLength": 32, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "smartLinkId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "linkName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "normalizedUrl": { "type": "string", "format": "uri", "minLength": 10, "maxLength": 2048, "pattern": "^https://.*" },
+        "destinationType": { "type": "string", "minLength": 2, "maxLength": 40, "pattern": "^[a-z0-9_]+$" },
+        "destinationConfig": { "type": "object" },
+        "campaignId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]*$" },
+        "status": { "type": "string", "enum": ["active", "inactive", "archived"] },
+        "expiresAt": { "type": "string", "maxLength": 40 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "shortCode",
+        "smartLinkId",
+        "ownerId",
+        "linkName",
+        "normalizedUrl",
+        "destinationType",
+        "destinationConfig",
+        "status",
+        "updatedAt"
+      ]
+    },
+    "ClickEvent": {
+      "title": "ClickEvent",
+      "description": "Privacy-safe redirect telemetry event containing no IP addresses or personal identifiers.",
+      "type": "object",
+      "properties": {
+        "smartLinkId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "shortCode": { "type": "string", "minLength": 3, "maxLength": 32, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "destinationType": { "type": "string", "minLength": 2, "maxLength": 40, "pattern": "^[a-z0-9_]+$" },
+        "campaignId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]*$" },
+        "platform": { "type": "string", "enum": ["android", "ios", "desktop", "other"] },
+        "deviceCategory": { "type": "string", "enum": ["mobile", "tablet", "desktop"] },
+        "browser": {
+          "type": "string",
+          "enum": [
+            "instagram_inapp",
+            "facebook_inapp",
+            "android_chrome",
+            "ios_safari",
+            "mobile_browser",
+            "desktop_browser"
+          ]
+        },
+        "referralSource": {
+          "type": "string",
+          "enum": ["instagram", "whatsapp", "facebook", "youtube", "qr_code", "direct", "other"]
+        },
+        "redirectOutcome": {
+          "type": "string",
+          "enum": [
+            "redirect_attempted",
+            "app_launch_attempted",
+            "fallback_shown",
+            "manual_app_click",
+            "manual_browser_click",
+            "direct_web_redirect"
+          ]
+        },
+        "dedupHash": { "type": "string", "maxLength": 64 },
+        "clickedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "smartLinkId",
+        "shortCode",
+        "ownerId",
+        "destinationType",
+        "platform",
+        "deviceCategory",
+        "browser",
+        "referralSource",
+        "redirectOutcome",
+        "clickedAt"
+      ]
+    },
+    "AppSetting": {
+      "title": "AppSetting",
+      "description": "Workspace domain and privacy configuration document managed by Super Admins.",
+      "type": "object",
+      "properties": {
+        "settingKey": { "type": "string", "enum": ["domain_config", "privacy_config"] },
+        "settingValue": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["settingKey", "settingValue", "updatedAt"]
     }
   },
   "firestore": {
@@ -211,17 +244,33 @@
       "schema": { "$ref": "#/entities/UserProfile" },
       "description": "Owner-isolated user profile documents."
     },
-    "/smartLinks/{linkId}": {
-      "schema": { "$ref": "#/entities/SmartLinkItem" },
-      "description": "User-owned smart link records for Firestore CRUD operations."
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Trusted admin lookup collection."
+    },
+    "/supportedApps/{appType}": {
+      "schema": { "$ref": "#/entities/SupportedApp" },
+      "description": "Extensible application adapter configurations."
     },
     "/campaigns/{campaignId}": {
       "schema": { "$ref": "#/entities/CampaignItem" },
-      "description": "User-owned campaign records for grouping smart links."
+      "description": "User-owned marketing campaigns."
     },
-    "/admins/{adminId}": {
-      "schema": { "$ref": "#/entities/AdminRecord" },
-      "description": "Trusted admin role lookup collection."
+    "/smartLinks/{linkId}": {
+      "schema": { "$ref": "#/entities/SmartLinkItem" },
+      "description": "User-owned smart links."
+    },
+    "/publicLinks/{shortCode}": {
+      "schema": { "$ref": "#/entities/PublicLinkRoute" },
+      "description": "Public single-document lookup by shortCode for short URL redirection (list disabled)."
+    },
+    "/clickEvents/{eventId}": {
+      "schema": { "$ref": "#/entities/ClickEvent" },
+      "description": "Append-only privacy-safe redirect click analytics."
+    },
+    "/appSettings/{settingKey}": {
+      "schema": { "$ref": "#/entities/AppSetting" },
+      "description": "Workspace domain and privacy settings."
     }
   }
 }

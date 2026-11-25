@@ -15,6 +15,8 @@ import { QrCodesPage } from './pages/QrCodesPage';
 import { ApplicationsPage } from './pages/ApplicationsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { UsersPage } from './pages/UsersPage';
+import { ShortRedirectPage } from './pages/ShortRedirectPage';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -154,10 +156,12 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+        <Route path="/r/:shortCode" element={<ShortRedirectPage />} />
         <Route
           path="/"
           element={<Navigate to={profile ? '/dashboard' : '/login'} replace />}
         />
+        <Route path="/:shortCode" element={<ShortRedirectPage />} />
         <Route
           path="*"
           element={<Navigate to={profile ? '/dashboard' : '/login'} replace />}
@@ -169,14 +173,16 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <AuthProvider>
-          <BrowserRouter>
-            <AppRoutes />
-          </BrowserRouter>
-        </AuthProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <AuthProvider>
+            <BrowserRouter>
+              <AppRoutes />
+            </BrowserRouter>
+          </AuthProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

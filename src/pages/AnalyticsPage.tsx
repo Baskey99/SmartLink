@@ -13,7 +13,12 @@ import {
   YAxis,
 } from 'recharts';
 import { ShieldCheck } from 'lucide-react';
-import { apiRequest } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
+import {
+  getAnalyticsSummary,
+  listCampaigns,
+  listSmartLinks,
+} from '../lib/firestore-service';
 import {
   BROWSER_LABELS,
   DESTINATION_LABELS,
@@ -68,6 +73,7 @@ interface CampaignOption {
 type RangePreset = 'today' | '7d' | '30d' | 'custom';
 
 export function AnalyticsPage() {
+  const { profile } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const linkIdParam = searchParams.get('linkId') || '';
   const campaignIdParam = searchParams.get('campaignId') || '';
@@ -77,30 +83,28 @@ export function AnalyticsPage() {
   const [customTo, setCustomTo] = useState('');
 
   const { data: linksList } = useQuery({
-    queryKey: ['links-options'],
-    queryFn: () => apiRequest<{ items: LinkOption[] }>('/api/links?page=1&pageSize=50'),
+    queryKey: ['links-options', profile?.id],
+    queryFn: () => listSmartLinks(profile!, { page: 1, pageSize: 50 }),
+    enabled: Boolean(profile),
   });
 
   const { data: campaignsList } = useQuery({
-    queryKey: ['campaigns'],
-    queryFn: () => apiRequest<{ campaigns: CampaignOption[] }>('/api/campaigns'),
+    queryKey: ['campaigns', profile?.id],
+    queryFn: async () => ({ campaigns: await listCampaigns(profile!) }),
+    enabled: Boolean(profile),
   });
 
-  const qs = new URLSearchParams({ range });
-  if (range === 'custom') {
-    if (customFrom) qs.set('from', customFrom);
-    if (customTo) qs.set('to', customTo);
-  }
-
-  const endpoint = linkIdParam
-    ? `/api/analytics/links/${linkIdParam}?${qs.toString()}`
-    : campaignIdParam
-      ? `/api/analytics/campaigns/${campaignIdParam}?${qs.toString()}`
-      : `/api/analytics/dashboard?${qs.toString()}`;
-
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['detailed-analytics', endpoint],
-    queryFn: () => apiRequest<AnalyticsResponse>(endpoint),
+    queryKey: ['detailed-analytics', profile?.id, range, customFrom, customTo, linkIdParam, campaignIdParam],
+    queryFn: () =>
+      getAnalyticsSummary(profile!, {
+        range,
+        from: range === 'custom' ? customFrom || undefined : undefined,
+        to: range === 'custom' ? customTo || undefined : undefined,
+        smartLinkId: linkIdParam || undefined,
+        campaignId: campaignIdParam || undefined,
+      }),
+    enabled: Boolean(profile),
   });
 
   const setScope = (type: 'all' | 'link' | 'campaign', id = '') => {
@@ -117,7 +121,7 @@ export function AnalyticsPage() {
     labelMap: Record<string, string>,
     totalDenominator: number
   ) => (
-    <Panel className="p-6">
+    <Panel className="p-4 sm:p-6">
       <h2 className="text-base font-semibold text-slate-950 dark:text-white">{title}</h2>
       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{subtitle}</p>
       {isLoading ? (
@@ -163,10 +167,10 @@ export function AnalyticsPage() {
   const totalOutcomes = (data?.clicksByOutcome || []).reduce((acc, cur) => acc + cur.value, 0);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+    <div className="space-y-5 sm:space-y-6">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3.5 sm:gap-4">
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
+          <h1 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
             Analytics
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
@@ -187,7 +191,7 @@ export function AnalyticsPage() {
       </div>
 
       {/* Scope & Date Filter Bar */}
-      <Panel className="p-4">
+      <Panel className="p-3.5 sm:p-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-center">
           <div>
             <Select
@@ -252,8 +256,8 @@ export function AnalyticsPage() {
       </div>
 
       {/* Clicks by Date Chart */}
-      <Panel className="p-6">
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
+      <Panel className="p-4 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-4 sm:mb-5">
           <div>
             <h2 className="text-base font-semibold text-slate-950 dark:text-white">
               Clicks by Date
@@ -264,14 +268,14 @@ export function AnalyticsPage() {
           </div>
         </div>
         {isLoading ? (
-          <Skeleton className="h-64 w-full" />
+          <Skeleton className="h-56 sm:h-64 w-full" />
         ) : (data?.clicksByDate?.length ?? 0) === 0 ? (
           <EmptyState
             title="No analytics data in this period"
             description="Open a SmartLink or run a live test click from the All Links preview modal to inspect real-time metrics."
           />
         ) : (
-          <div className="h-64 w-full">
+          <div className="h-56 sm:h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={data?.clicksByDate} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
                 <defs>
@@ -301,8 +305,8 @@ export function AnalyticsPage() {
       </Panel>
 
       {/* Platform & Destination Bar Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Panel className="p-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-6">
+        <Panel className="p-4 sm:p-6">
           <h2 className="text-base font-semibold text-slate-950 dark:text-white">
             Clicks by Platform
           </h2>
@@ -310,11 +314,11 @@ export function AnalyticsPage() {
             Operating system distribution across Android, iOS, and Desktop
           </p>
           {isLoading ? (
-            <Skeleton className="h-52 w-full mt-4" />
+            <Skeleton className="h-48 sm:h-52 w-full mt-4" />
           ) : (data?.clicksByPlatform?.length ?? 0) === 0 ? (
             <p className="mt-6 text-xs text-slate-500">No platform data yet.</p>
           ) : (
-            <div className="h-52 w-full mt-4">
+            <div className="h-48 sm:h-52 w-full mt-4">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={data?.clicksByPlatform.map((d) => ({
@@ -342,7 +346,7 @@ export function AnalyticsPage() {
           )}
         </Panel>
 
-        <Panel className="p-6">
+        <Panel className="p-4 sm:p-6">
           <h2 className="text-base font-semibold text-slate-950 dark:text-white">
             Clicks by Destination Application
           </h2>
@@ -350,11 +354,11 @@ export function AnalyticsPage() {
             Traffic routed per configured application adapter
           </p>
           {isLoading ? (
-            <Skeleton className="h-52 w-full mt-4" />
+            <Skeleton className="h-48 sm:h-52 w-full mt-4" />
           ) : (data?.clicksByDestination?.length ?? 0) === 0 ? (
             <p className="mt-6 text-xs text-slate-500">No destination traffic recorded yet.</p>
           ) : (
-            <div className="h-52 w-full mt-4">
+            <div className="h-48 sm:h-52 w-full mt-4">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={data?.clicksByDestination.map((d) => ({
@@ -384,7 +388,7 @@ export function AnalyticsPage() {
       </div>
 
       {/* Browser, Referral Source, and Observable Redirect Outcome Breakdowns */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
         {renderMetricList(
           'Clicks by Browser',
           'In-app social webviews vs. system mobile & desktop browsers',

@@ -1,7 +1,5 @@
 import {
-  addDoc,
   collection,
-  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -11,62 +9,20 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
   type Timestamp,
   type Unsubscribe,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
+import {
+  OperationType,
+  handleFirestoreError,
+  type FirestoreErrorInfo,
+  syncUserProfile,
+} from './firestore-service';
+import { processDestinationUrl } from './redirect-engine/index';
 
-export enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-export interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  };
-}
-
-export function handleFirestoreError(
-  error: unknown,
-  operationType: OperationType,
-  path: string | null
-): never {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo:
-        auth.currentUser?.providerData?.map((provider) => ({
-          providerId: provider.providerId,
-          email: provider.email,
-        })) || [],
-    },
-    operationType,
-    path,
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
+export { OperationType, handleFirestoreError, type FirestoreErrorInfo };
 
 export interface FirestoreSmartLink {
   id?: string;
@@ -74,6 +30,7 @@ export interface FirestoreSmartLink {
   linkName: string;
   shortCode: string;
   originalUrl: string;
+  normalizedUrl: string;
   destinationType:
     | 'youtube'
     | 'whatsapp'
@@ -84,6 +41,7 @@ export interface FirestoreSmartLink {
     | 'website'
     | 'custom_app'
     | 'other';
+  destinationConfig: Record<string, unknown>;
   campaignId?: string;
   status: 'active' | 'inactive' | 'archived';
   createdAt?: Timestamp;
@@ -118,9 +76,16 @@ function sanitizeString(value: string, maxLength: number): string {
   return value.trim().slice(0, maxLength);
 }
 
-// =========================================================================
-// Smart Links CRUD Helpers (Cloud Firestore)
-// =========================================================================
+function makeDocId(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = new Uint8Array(20);
+  crypto.getRandomValues(bytes);
+  let out = '';
+  for (let i = 0; i < bytes.length; i++) {
+    out += chars[bytes[i] % chars.length];
+  }
+  return out;
+}
 
 export async function createSmartLinkDoc(input: {
   linkName: string;
@@ -140,27 +105,51 @@ export async function createSmartLinkDoc(input: {
     throw new Error('Destination URL must start with https://');
   }
 
-  const payload: Record<string, unknown> = {
+  const processed = processDestinationUrl(originalUrl, input.destinationType, null, 'app_first');
+  const normalizedUrl = processed.valid ? processed.normalizedUrl : originalUrl;
+  const destinationConfig = processed.valid
+    ? processed.destinationConfig
+    : { webFallbackUrl: originalUrl, fallbackPreference: 'app_first' };
+
+  const linkId = makeDocId();
+  const linkPayload: Record<string, unknown> = {
     ownerId: uid,
     linkName: sanitizeString(input.linkName, 120),
     shortCode,
     originalUrl,
+    normalizedUrl,
     destinationType: input.destinationType,
+    destinationConfig,
     status: 'active',
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
 
+  const publicPayload: Record<string, unknown> = {
+    shortCode,
+    smartLinkId: linkId,
+    ownerId: uid,
+    linkName: sanitizeString(input.linkName, 120),
+    normalizedUrl,
+    destinationType: input.destinationType,
+    destinationConfig,
+    status: 'active',
+    updatedAt: serverTimestamp(),
+  };
+
   if (input.campaignId && ID_PATTERN.test(input.campaignId)) {
-    payload.campaignId = sanitizeString(input.campaignId, 128);
+    linkPayload.campaignId = sanitizeString(input.campaignId, 128);
+    publicPayload.campaignId = sanitizeString(input.campaignId, 128);
   }
 
-  const colPath = 'smartLinks';
   try {
-    const ref = await addDoc(collection(db, colPath), payload);
-    return ref.id;
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'smartLinks', linkId), linkPayload);
+    batch.set(doc(db, 'publicLinks', shortCode), publicPayload);
+    await batch.commit();
+    return linkId;
   } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, colPath);
+    handleFirestoreError(error, OperationType.CREATE, `smartLinks/${linkId}`);
   }
 }
 
@@ -212,91 +201,48 @@ export function subscribeUserSmartLinks(
   );
 }
 
-export async function updateSmartLinkDoc(
-  linkId: string,
-  updates: Partial<
-    Pick<FirestoreSmartLink, 'linkName' | 'shortCode' | 'originalUrl' | 'destinationType' | 'campaignId'>
-  >
-): Promise<void> {
-  assertSignedInUid();
-  const docPath = `smartLinks/${linkId}`;
-  const payload: Record<string, unknown> = { updatedAt: serverTimestamp() };
-
-  if (updates.linkName !== undefined) payload.linkName = sanitizeString(updates.linkName, 120);
-  if (updates.shortCode !== undefined) payload.shortCode = sanitizeString(updates.shortCode, 32);
-  if (updates.originalUrl !== undefined) {
-    const cleanUrl = sanitizeString(updates.originalUrl, 2048);
-    if (!HTTPS_PATTERN.test(cleanUrl)) {
-      throw new Error('Destination URL must start with https://');
-    }
-    payload.originalUrl = cleanUrl;
-  }
-  if (updates.destinationType !== undefined) payload.destinationType = updates.destinationType;
-  if (updates.campaignId !== undefined) payload.campaignId = sanitizeString(updates.campaignId, 128);
-
-  try {
-    await updateDoc(doc(db, 'smartLinks', linkId), payload);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, docPath);
-  }
-}
-
 export async function updateSmartLinkStatusDoc(
   linkId: string,
+  shortCode: string,
   status: FirestoreSmartLink['status']
 ): Promise<void> {
   assertSignedInUid();
   const docPath = `smartLinks/${linkId}`;
   try {
-    await updateDoc(doc(db, 'smartLinks', linkId), {
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'smartLinks', linkId), {
       status,
       updatedAt: serverTimestamp(),
     });
+    batch.update(doc(db, 'publicLinks', shortCode), {
+      status,
+      updatedAt: serverTimestamp(),
+    });
+    await batch.commit();
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, docPath);
   }
 }
 
-export async function deleteSmartLinkDoc(linkId: string): Promise<void> {
+export async function deleteSmartLinkDoc(linkId: string, shortCode?: string): Promise<void> {
   assertSignedInUid();
   const docPath = `smartLinks/${linkId}`;
   try {
-    await deleteDoc(doc(db, 'smartLinks', linkId));
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'smartLinks', linkId));
+    if (shortCode) {
+      batch.delete(doc(db, 'publicLinks', shortCode));
+    }
+    await batch.commit();
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, docPath);
   }
 }
 
-// =========================================================================
-// User Profile Sync Helper (Cloud Firestore)
-// =========================================================================
-
 export async function ensureFirestoreUserProfile(): Promise<void> {
-  const user = auth.currentUser;
-  if (!user || !user.email) return;
-  const docPath = `users/${user.uid}`;
-  try {
-    const ref = doc(db, 'users', user.uid);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
-      await setDoc(ref, {
-        uid: user.uid,
-        fullName: sanitizeString(user.displayName || user.email.split('@')[0], 100),
-        email: sanitizeString(user.email, 254),
-        role: 'user',
-        status: 'active',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, docPath);
-  }
+  if (!auth.currentUser) return;
+  await syncUserProfile(auth.currentUser);
 }
-
-// =========================================================================
-// Campaigns CRUD Helpers (Cloud Firestore)
-// =========================================================================
 
 export async function createCampaignDoc(input: {
   campaignName: string;
@@ -306,7 +252,8 @@ export async function createCampaignDoc(input: {
   utmCampaign?: string;
 }): Promise<string> {
   const uid = assertSignedInUid();
-  const colPath = 'campaigns';
+  const id = makeDocId();
+  const docPath = `campaigns/${id}`;
   const payload: Record<string, unknown> = {
     ownerId: uid,
     campaignName: sanitizeString(input.campaignName, 120),
@@ -321,34 +268,22 @@ export async function createCampaignDoc(input: {
   if (input.utmCampaign) payload.utmCampaign = sanitizeString(input.utmCampaign, 80);
 
   try {
-    const ref = await addDoc(collection(db, colPath), payload);
-    return ref.id;
+    await setDoc(doc(db, 'campaigns', id), payload);
+    return id;
   } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, colPath);
+    handleFirestoreError(error, OperationType.CREATE, docPath);
   }
 }
 
-export async function listUserCampaignDocs(): Promise<FirestoreCampaign[]> {
-  const uid = assertSignedInUid();
-  const colPath = 'campaigns';
-  try {
-    const q = query(collection(db, colPath), where('ownerId', '==', uid));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({
-      id: d.id,
-      ...(d.data() as Omit<FirestoreCampaign, 'id'>),
-    }));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, colPath);
-  }
-}
-
-export async function deleteCampaignDoc(campaignId: string): Promise<void> {
+export async function updateCampaignNameDoc(campaignId: string, campaignName: string): Promise<void> {
   assertSignedInUid();
   const docPath = `campaigns/${campaignId}`;
   try {
-    await deleteDoc(doc(db, 'campaigns', campaignId));
+    await updateDoc(doc(db, 'campaigns', campaignId), {
+      campaignName: sanitizeString(campaignName, 120),
+      updatedAt: serverTimestamp(),
+    });
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, docPath);
+    handleFirestoreError(error, OperationType.UPDATE, docPath);
   }
 }

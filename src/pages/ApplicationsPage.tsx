@@ -2,9 +2,12 @@ import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus } from 'lucide-react';
 import { toast } from 'sonner';
-import { apiRequest } from '../lib/api';
+import {
+  listSupportedApps,
+  saveSupportedApp,
+  type SupportedAppRow,
+} from '../lib/firestore-service';
 import { useAuth } from '../context/AuthContext';
-import type { SupportedAppRecord } from '../lib/redirect-engine/types';
 import {
   Button,
   ErrorState,
@@ -16,10 +19,7 @@ import {
   Textarea,
 } from '../components/ui/primitives';
 
-interface AppRow extends SupportedAppRecord {
-  id: string;
-  createdAt: string;
-}
+type AppRow = SupportedAppRow;
 
 export function ApplicationsPage() {
   const { profile } = useAuth();
@@ -47,12 +47,13 @@ export function ApplicationsPage() {
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['supported-apps'],
-    queryFn: () => apiRequest<{ apps: AppRow[] }>('/api/apps'),
+    queryFn: async () => ({ apps: await listSupportedApps() }),
+    enabled: Boolean(profile),
   });
 
   const saveMutation = useMutation({
-    mutationFn: () => {
-      const payload = {
+    mutationFn: () =>
+      saveSupportedApp({
         appName,
         appType,
         androidPackage: androidPackage.trim() || null,
@@ -71,12 +72,7 @@ export function ApplicationsPage() {
           documentedCapabilities: documentedCapabilities.trim(),
           allowedHosts: editing?.configuration?.allowedHosts || [],
         },
-      };
-      if (editing) {
-        return apiRequest(`/api/apps/${editing.id}`, { method: 'PUT', body: payload });
-      }
-      return apiRequest('/api/apps', { method: 'POST', body: payload });
-    },
+      }),
     onSuccess: () => {
       toast.success(editing ? 'Application adapter updated' : 'Custom application added');
       setModalOpen(false);
@@ -127,10 +123,10 @@ export function ApplicationsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="space-y-5 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3.5 sm:gap-4">
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
+          <h1 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
             Supported Applications
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
@@ -138,7 +134,7 @@ export function ApplicationsPage() {
           </p>
         </div>
         {isSuperAdmin && (
-          <Button onClick={openCreate}>
+          <Button onClick={openCreate} className="w-full sm:w-auto">
             <Plus className="h-4 w-4" />
             <span>Add Application</span>
           </Button>
@@ -165,11 +161,11 @@ export function ApplicationsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {(data?.apps || []).map((app) => (
-            <Panel key={app.id} className="p-5 flex flex-col justify-between gap-4">
+            <Panel key={app.id} className="p-4 sm:p-5 flex flex-col justify-between gap-4">
               <div className="space-y-3">
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-base font-semibold text-slate-950 dark:text-white">
+                  <div className="min-w-0">
+                    <h2 className="text-base font-semibold text-slate-950 dark:text-white truncate">
                       {app.appName}
                     </h2>
                     <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
@@ -191,7 +187,8 @@ export function ApplicationsPage() {
                       type="button"
                       onClick={() => openEdit(app)}
                       title="Edit application configuration"
-                      className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                      aria-label={`Edit ${app.appName}`}
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white cursor-pointer shrink-0"
                     >
                       <Pencil className="h-4 w-4" />
                     </button>
@@ -379,8 +376,8 @@ export function ApplicationsPage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3 pt-1 text-xs text-slate-700 dark:text-slate-300">
-            <label className="flex items-center gap-2 cursor-pointer">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-xs text-slate-700 dark:text-slate-300">
+            <label className="flex items-center gap-2.5 min-h-[36px] cursor-pointer">
               <input
                 type="checkbox"
                 checked={supportsAppLinks}
@@ -389,7 +386,7 @@ export function ApplicationsPage() {
               />
               <span>Supports Android App Links</span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label className="flex items-center gap-2.5 min-h-[36px] cursor-pointer">
               <input
                 type="checkbox"
                 checked={supportsUniversalLinks}
@@ -398,7 +395,7 @@ export function ApplicationsPage() {
               />
               <span>Supports iOS Universal Links</span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label className="flex items-center gap-2.5 min-h-[36px] cursor-pointer">
               <input
                 type="checkbox"
                 checked={storeRedirectEnabled}
@@ -407,7 +404,7 @@ export function ApplicationsPage() {
               />
               <span>Show Store Install Link on Fallback</span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label className="flex items-center gap-2.5 min-h-[36px] cursor-pointer">
               <input
                 type="checkbox"
                 checked={isActive}
@@ -418,11 +415,20 @@ export function ApplicationsPage() {
             </label>
           </div>
 
-          <div className="pt-3 flex justify-end gap-2.5">
-            <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
+          <div className="pt-3 flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5">
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full sm:w-auto"
+              onClick={() => setModalOpen(false)}
+            >
               Cancel
             </Button>
-            <Button type="submit" disabled={saveMutation.isPending}>
+            <Button
+              type="submit"
+              className="w-full sm:w-auto"
+              disabled={saveMutation.isPending}
+            >
               {saveMutation.isPending ? 'Saving...' : 'Save Configuration'}
             </Button>
           </div>

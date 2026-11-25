@@ -1,18 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
 import { auth, googleAuthProvider } from '../lib/firebase';
-import { apiRequest, setMemoryIdToken } from '../lib/api';
+import { syncUserProfile, type UserProfile } from '../lib/firestore-service';
 
-export interface UserProfile {
-  id: string;
-  firebaseUid: string;
-  fullName: string;
-  email: string;
-  role: 'super_admin' | 'admin' | 'user';
-  status: 'active' | 'inactive';
-  avatarUrl: string | null;
-  createdAt: string;
-}
+export type { UserProfile };
 
 interface AuthContextValue {
   firebaseUser: User | null;
@@ -26,6 +17,23 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function formatAuthError(err: unknown): string {
+  if (!err) return 'Could not load your account profile.';
+  const raw = err instanceof Error ? err.message : String(err);
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.error === 'string') {
+      if (parsed.error.includes('Missing or insufficient permissions')) {
+        return 'Firestore permission denied while syncing your profile. Please sign out and sign in again.';
+      }
+      return parsed.error;
+    }
+  } catch {
+    // Plain message
+  }
+  return raw;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -34,7 +42,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const syncProfile = useCallback(async (user: User | null) => {
     if (!user) {
-      setMemoryIdToken(null);
       setProfile(null);
       setLoading(false);
       return;
@@ -42,14 +49,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       setAuthError(null);
-      const token = await user.getIdToken();
-      setMemoryIdToken(token);
-      const data = await apiRequest<{ profile: UserProfile }>('/api/auth/profile');
-      setProfile(data.profile);
+      const synced = await syncUserProfile(user);
+      setProfile(synced);
     } catch (err) {
       console.error('Failed to sync profile:', err);
       setProfile(null);
-      setAuthError((err as Error).message || 'Could not load your account profile.');
+      setAuthError(formatAuthError(err));
     } finally {
       setLoading(false);
     }
@@ -68,11 +73,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     try {
       const result = await signInWithPopup(auth, googleAuthProvider);
+      // Force fresh ID token readiness, then await the single-flight profile sync
+      await result.user.getIdToken();
       await syncProfile(result.user);
     } catch (err) {
-      const msg = (err as { code?: string; message?: string })?.code === 'auth/popup-closed-by-user'
-        ? 'Sign-in window was closed before completing authentication.'
-        : (err as Error).message || 'Sign-in failed. Please try again.';
+      const code = (err as { code?: string })?.code;
+      const msg =
+        code === 'auth/popup-closed-by-user'
+          ? 'Sign-in window was closed before completing authentication.'
+          : code === 'auth/popup-blocked'
+            ? 'Your browser blocked the Google sign-in popup. Please allow popups for this site and try again.'
+            : formatAuthError(err);
       setAuthError(msg);
       setLoading(false);
     }
@@ -80,9 +91,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     await signOut(auth);
-    setMemoryIdToken(null);
     setProfile(null);
     setFirebaseUser(null);
+    setAuthError(null);
   }, []);
 
   const refreshProfile = useCallback(async () => {

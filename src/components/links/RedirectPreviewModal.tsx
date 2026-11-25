@@ -5,10 +5,14 @@ import { SIMULATED_USER_AGENTS, detectDeviceContext } from '../../lib/redirect-e
 import { resolveRedirection } from '../../lib/redirect-engine/index';
 import type { DestinationConfigJson } from '../../db/schema';
 import { buildShortUrl, DESTINATION_LABELS } from '../../lib/utils';
+import { recordClickEvent } from '../../lib/firestore-service';
+import { useAuth } from '../../context/AuthContext';
 import { Button, Modal } from '../ui/primitives';
 
 export interface PreviewLinkItem {
   id: string;
+  ownerId?: string;
+  campaignId?: string | null;
   linkName: string;
   shortCode: string;
   originalUrl: string;
@@ -37,6 +41,7 @@ export function RedirectPreviewModal({
   onClose: () => void;
   onClickRecorded?: () => void;
 }) {
+  const { profile } = useAuth();
   const [envKey, setEnvKey] = useState<string>('instagram_ios');
   const [recording, setRecording] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -68,9 +73,26 @@ export function RedirectPreviewModal({
   };
 
   const handleRecordSimulatedClick = async () => {
+    const ownerId = link.ownerId || profile?.firebaseUid;
+    if (!ownerId) {
+      toast.error('Unable to determine link owner for test click.');
+      return;
+    }
+
     setRecording(true);
     try {
-      await fetch(`/r/${encodeURIComponent(link.shortCode)}?preview=1&record=1&sim=${encodeURIComponent(envKey)}`);
+      await recordClickEvent({
+        smartLinkId: link.id,
+        shortCode: link.shortCode,
+        ownerId,
+        destinationType: link.destinationType,
+        campaignId: link.campaignId || null,
+        platform: simulation.device.platform,
+        deviceCategory: simulation.device.deviceCategory,
+        browser: simulation.device.browser,
+        referralSource: simulation.device.referralSource,
+        redirectOutcome: simulation.plan.outcome,
+      });
       toast.success(`Recorded simulated click from ${simulation.preset.label}`);
       onClickRecorded?.();
     } catch {
@@ -90,7 +112,7 @@ export function RedirectPreviewModal({
     >
       <div className="space-y-5">
         {/* Environment Selector */}
-        <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-900 p-1.5 border border-slate-200 dark:border-slate-800">
+        <div className="flex overflow-x-auto no-scrollbar sm:flex-wrap items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-900 p-1.5 border border-slate-200 dark:border-slate-800">
           {ENV_KEYS.map((key) => {
             const active = envKey === key;
             return (
@@ -98,7 +120,7 @@ export function RedirectPreviewModal({
                 key={key}
                 type="button"
                 onClick={() => setEnvKey(key)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                className={`px-3 py-2 sm:py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   active
                     ? 'bg-white dark:bg-slate-800 text-slate-950 dark:text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-200'
@@ -127,7 +149,7 @@ export function RedirectPreviewModal({
                 </div>
               </div>
 
-              <div className="border-t border-slate-100 dark:border-slate-800/80 pt-3 grid grid-cols-2 gap-3 text-xs">
+              <div className="border-t border-slate-100 dark:border-slate-800/80 pt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div>
                   <span className="text-slate-500 dark:text-slate-400 block">Destination Type</span>
                   <span className="font-medium text-slate-900 dark:text-slate-100">
@@ -150,7 +172,7 @@ export function RedirectPreviewModal({
                   <span className="text-slate-500 dark:text-slate-400 block">Redirect Strategy</span>
                   <span className="font-medium text-slate-900 dark:text-slate-100">
                     {simulation.plan.strategy === 'direct_302'
-                      ? 'Direct 302 Web Redirect'
+                      ? 'Direct Web Redirect'
                       : simulation.plan.strategy === 'inapp_fallback_ui'
                         ? 'In-App Fallback UI'
                         : 'App Link / Intent + Fallback'}
@@ -182,12 +204,13 @@ export function RedirectPreviewModal({
               )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2.5">
               <Button
                 variant="primary"
                 size="sm"
                 onClick={handleRecordSimulatedClick}
                 disabled={recording}
+                className="w-full sm:w-auto"
               >
                 <Play className="h-3.5 w-3.5" />
                 <span>{recording ? 'Recording...' : 'Trigger Live Test Click'}</span>
@@ -196,7 +219,7 @@ export function RedirectPreviewModal({
                 href={`/r/${encodeURIComponent(link.shortCode)}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-800 px-3 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                className="inline-flex h-10 sm:h-9 items-center justify-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-800 px-3 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
                 <span>Open Live Short URL</span>
@@ -204,19 +227,19 @@ export function RedirectPreviewModal({
             </div>
           </div>
 
-          {/* Right: Live Rendered Backend Redirect Page */}
+          {/* Right: Live Rendered Redirect Page */}
           <div className="lg:col-span-6">
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-950 p-3">
-              <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2 px-1">
-                <span className="flex items-center gap-1.5">
-                  <Smartphone className="h-3.5 w-3.5" />
-                  <span>Rendered Interstitial ({simulation.preset.label})</span>
+              <div className="flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 mb-2 px-1">
+                <span className="flex items-center gap-1.5 min-w-0 truncate">
+                  <Smartphone className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">Preview ({simulation.preset.label})</span>
                 </span>
-                <span className="font-mono">/r/{link.shortCode}</span>
+                <span className="font-mono shrink-0">/r/{link.shortCode}</span>
               </div>
               {simulation.plan.strategy === 'direct_302' ? (
-                <div className="h-[380px] rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827] flex flex-col items-center justify-center p-6 text-center">
-                  <p className="text-xs font-mono text-slate-500 dark:text-slate-400">HTTP 302 Found</p>
+                <div className="h-[300px] sm:h-[380px] rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827] flex flex-col items-center justify-center p-5 sm:p-6 text-center">
+                  <p className="text-xs font-mono text-slate-500 dark:text-slate-400">Instant Redirect</p>
                   <h4 className="mt-2 text-base font-semibold text-slate-900 dark:text-white">
                     Immediate Desktop Redirect
                   </h4>
@@ -231,8 +254,8 @@ export function RedirectPreviewModal({
                 <iframe
                   title="SmartLink Redirect Preview"
                   src={previewFrameUrl}
-                  className="w-full h-[380px] rounded-lg border border-slate-200 dark:border-slate-800 bg-white"
-                  sandbox="allow-scripts allow-popups"
+                  className="w-full h-[320px] sm:h-[380px] rounded-lg border border-slate-200 dark:border-slate-800 bg-white"
+                  sandbox="allow-scripts allow-same-origin allow-popups"
                 />
               )}
             </div>

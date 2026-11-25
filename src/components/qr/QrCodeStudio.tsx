@@ -158,10 +158,10 @@ export function QrCodeStudio({ link }: { link: QrLinkTarget }) {
       {/* Live Preview */}
       <div className="md:col-span-5 flex flex-col items-center">
         <div
-          className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 flex items-center justify-center"
+          className="rounded-xl border border-slate-200 dark:border-slate-800 p-3.5 sm:p-4 flex items-center justify-center"
           style={{ backgroundColor: bgColor }}
         >
-          <canvas ref={canvasRef} className="w-[240px] h-[240px] rounded" />
+          <canvas ref={canvasRef} className="w-[200px] h-[200px] sm:w-[240px] sm:h-[240px] rounded" />
         </div>
         <div className="mt-3 text-center w-full">
           <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
@@ -198,7 +198,7 @@ export function QrCodeStudio({ link }: { link: QrLinkTarget }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <Label htmlFor="qr-fg">Foreground Color</Label>
             <div className="flex items-center gap-2">
@@ -207,7 +207,7 @@ export function QrCodeStudio({ link }: { link: QrLinkTarget }) {
                 type="color"
                 value={fgColor}
                 onChange={(e) => setFgColor(e.target.value)}
-                className="h-10 w-10 rounded-lg border border-slate-200 dark:border-slate-800 bg-transparent cursor-pointer"
+                className="h-11 w-11 sm:h-10 sm:w-10 shrink-0 rounded-lg border border-slate-200 dark:border-slate-800 bg-transparent cursor-pointer"
               />
               <Input
                 value={fgColor}
@@ -224,7 +224,7 @@ export function QrCodeStudio({ link }: { link: QrLinkTarget }) {
                 type="color"
                 value={bgColor}
                 onChange={(e) => setBgColor(e.target.value)}
-                className="h-10 w-10 rounded-lg border border-slate-200 dark:border-slate-800 bg-transparent cursor-pointer"
+                className="h-11 w-11 sm:h-10 sm:w-10 shrink-0 rounded-lg border border-slate-200 dark:border-slate-800 bg-transparent cursor-pointer"
               />
               <Input
                 value={bgColor}
@@ -237,8 +237,8 @@ export function QrCodeStudio({ link }: { link: QrLinkTarget }) {
 
         <div>
           <Label>Center Logo (Optional)</Label>
-          <div className="flex items-center gap-2.5">
-            <label className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <label className="inline-flex h-10 sm:h-9 items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3.5 sm:px-3 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
               <ImagePlus className="h-3.5 w-3.5" />
               <span>{logoDataUrl ? 'Replace Logo' : 'Upload Logo'}</span>
               <input
@@ -257,26 +257,26 @@ export function QrCodeStudio({ link }: { link: QrLinkTarget }) {
           </div>
         </div>
 
-        <label className="flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+        <label className="flex items-start sm:items-center gap-2.5 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
           <input
             type="checkbox"
             checked={includeQrAttribution}
             onChange={(e) => setIncludeQrAttribution(e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-600"
+            className="h-4 w-4 mt-0.5 sm:mt-0 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-600"
           />
           <span>Tag scans with QR Code referral attribution (?src=qr_code)</span>
         </label>
 
-        <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex flex-wrap gap-2.5">
-          <Button variant="primary" size="sm" onClick={() => void handleDownloadPng()}>
+        <div className="pt-2 border-t border-slate-200 dark:border-slate-800 grid grid-cols-1 sm:flex sm:flex-wrap gap-2.5">
+          <Button variant="primary" size="sm" onClick={() => void handleDownloadPng()} className="w-full sm:w-auto">
             <Download className="h-3.5 w-3.5" />
             <span>Download PNG</span>
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => void handleDownloadSvg()}>
+          <Button variant="secondary" size="sm" onClick={() => void handleDownloadSvg()} className="w-full sm:w-auto">
             <Download className="h-3.5 w-3.5" />
             <span>Download SVG</span>
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => void handleCopy()}>
+          <Button variant="secondary" size="sm" onClick={() => void handleCopy()} className="w-full sm:w-auto">
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             <span>{copied ? 'Copied' : 'Copy Short URL'}</span>
           </Button>

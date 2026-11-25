@@ -2,7 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
-import { apiRequest } from '../lib/api';
+import {
+  getAppSettings,
+  saveAppSetting,
+  updateCurrentUserProfileName,
+} from '../lib/firestore-service';
 import { useAuth } from '../context/AuthContext';
 import { Button, Input, Label, Panel, Skeleton, Textarea } from '../components/ui/primitives';
 
@@ -37,8 +41,9 @@ export function SettingsPage() {
   const [androidFingerprintsText, setAndroidFingerprintsText] = useState('');
 
   const { data, isLoading } = useQuery({
-    queryKey: ['app-settings'],
-    queryFn: () => apiRequest<{ settings: SettingsMap }>('/api/settings'),
+    queryKey: ['app-settings', profile?.id],
+    queryFn: async () => ({ settings: await getAppSettings() }),
+    enabled: Boolean(profile),
   });
 
   useEffect(() => {
@@ -57,11 +62,7 @@ export function SettingsPage() {
   }, [data]);
 
   const profileMutation = useMutation({
-    mutationFn: () =>
-      apiRequest('/api/auth/profile', {
-        method: 'PUT',
-        body: { fullName },
-      }),
+    mutationFn: () => updateCurrentUserProfileName(profile!.firebaseUid, fullName),
     onSuccess: async () => {
       await refreshProfile();
       toast.success('Profile updated');
@@ -71,23 +72,17 @@ export function SettingsPage() {
 
   const domainMutation = useMutation({
     mutationFn: () =>
-      apiRequest('/api/settings', {
-        method: 'PUT',
-        body: {
-          key: 'domain_config',
-          value: {
-            customShortDomain: customShortDomain.trim(),
-            enforceHttps: true,
-            defaultFallbackPreference: 'app_first',
-            iosTeamId: iosTeamId.trim(),
-            iosAppBundleId: iosAppBundleId.trim(),
-            androidAppPackage: androidAppPackage.trim(),
-            androidSha256Fingerprints: androidFingerprintsText
-              .split('\n')
-              .map((s) => s.trim())
-              .filter(Boolean),
-          },
-        },
+      saveAppSetting('domain_config', {
+        customShortDomain: customShortDomain.trim(),
+        enforceHttps: true,
+        defaultFallbackPreference: 'app_first',
+        iosTeamId: iosTeamId.trim(),
+        iosAppBundleId: iosAppBundleId.trim(),
+        androidAppPackage: androidAppPackage.trim(),
+        androidSha256Fingerprints: androidFingerprintsText
+          .split('\n')
+          .map((s) => s.trim())
+          .filter(Boolean),
       }),
     onSuccess: () => {
       toast.success('Domain & mobile verification settings saved');
@@ -97,9 +92,9 @@ export function SettingsPage() {
   });
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-5 sm:space-y-6 max-w-4xl">
       <div>
-        <h1 className="font-display text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
+        <h1 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
           Settings
         </h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
@@ -108,7 +103,7 @@ export function SettingsPage() {
       </div>
 
       {/* Account Profile */}
-      <Panel className="p-6">
+      <Panel className="p-4 sm:p-6">
         <h2 className="text-base font-semibold text-slate-950 dark:text-white">Account Profile</h2>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
           Your display name and assigned workspace role.
@@ -134,14 +129,19 @@ export function SettingsPage() {
             <Label htmlFor="profile-email">Email Address</Label>
             <Input id="profile-email" value={profile?.email || ''} disabled />
           </div>
-          <div className="sm:col-span-2 flex items-center justify-between pt-2">
+          <div className="sm:col-span-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
             <div className="text-xs text-slate-500 dark:text-slate-400">
               Assigned Role:{' '}
               <span className="font-semibold text-slate-900 dark:text-white capitalize">
                 {profile?.role?.replace('_', ' ')}
               </span>
             </div>
-            <Button type="submit" size="sm" disabled={profileMutation.isPending}>
+            <Button
+              type="submit"
+              size="sm"
+              className="w-full sm:w-auto"
+              disabled={profileMutation.isPending}
+            >
               {profileMutation.isPending ? 'Saving...' : 'Save Profile'}
             </Button>
           </div>
@@ -149,7 +149,7 @@ export function SettingsPage() {
       </Panel>
 
       {/* Domain Association & Universal Links Configuration */}
-      <Panel className="p-6 space-y-5">
+      <Panel className="p-4 sm:p-6 space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-slate-950 dark:text-white">
@@ -164,7 +164,7 @@ export function SettingsPage() {
               href="/.well-known/apple-app-site-association"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+              className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
             >
               <span>Inspect AASA</span>
               <ExternalLink className="h-3 w-3" />
@@ -173,7 +173,7 @@ export function SettingsPage() {
               href="/.well-known/assetlinks.json"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+              className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
             >
               <span>Inspect assetlinks.json</span>
               <ExternalLink className="h-3 w-3" />
@@ -254,7 +254,12 @@ export function SettingsPage() {
 
             {isSuperAdmin ? (
               <div className="pt-2 flex justify-end">
-                <Button type="submit" size="sm" disabled={domainMutation.isPending}>
+                <Button
+                  type="submit"
+                  size="sm"
+                  className="w-full sm:w-auto"
+                  disabled={domainMutation.isPending}
+                >
                   {domainMutation.isPending ? 'Saving...' : 'Save Domain Configuration'}
                 </Button>
               </div>
@@ -268,7 +273,7 @@ export function SettingsPage() {
       </Panel>
 
       {/* Privacy & Security Posture */}
-      <Panel className="p-6 space-y-3">
+      <Panel className="p-4 sm:p-6 space-y-3">
         <div className="flex items-center gap-2 text-sm font-semibold text-slate-950 dark:text-white">
           <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
           <span>Security &amp; Privacy Guarantees</span>
@@ -278,10 +283,10 @@ export function SettingsPage() {
             All destination URLs are strictly validated for HTTPS and checked against loopback, link-local, and private network ranges to prevent open-redirect and SSRF abuse.
           </li>
           <li>
-            Visitor IP addresses are never stored in PostgreSQL; unique click estimates use an ephemeral daily-rotating bucket hash without cross-day tracking or device fingerprinting.
+            Visitor IP addresses are never stored in Cloud Firestore; unique click estimates use an ephemeral hourly bucket hash without cross-day tracking or device fingerprinting.
           </li>
           <li>
-            Redirect endpoints and write APIs enforce rate limiting and role-based access control backed by verified Firebase ID tokens.
+            All workspace data is protected by strict Cloud Firestore Security Rules enforcing verified Firebase Authentication, owner isolation, and server-timestamp validation.
           </li>
         </ul>
       </Panel>

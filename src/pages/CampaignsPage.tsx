@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -18,7 +18,15 @@ import {
   YAxis,
 } from 'recharts';
 import { toast } from 'sonner';
-import { apiRequest } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
+import {
+  createCampaign,
+  deleteCampaign,
+  getAnalyticsSummary,
+  listCampaigns,
+  updateCampaign,
+  type CampaignRow,
+} from '../lib/firestore-service';
 import {
   DESTINATION_LABELS,
   formatNumber,
@@ -40,40 +48,6 @@ import {
   Textarea,
 } from '../components/ui/primitives';
 
-interface CampaignRow {
-  id: string;
-  campaignName: string;
-  description: string | null;
-  utmSource: string | null;
-  utmMedium: string | null;
-  utmCampaign: string | null;
-  startDate: string | null;
-  endDate: string | null;
-  status: 'active' | 'paused' | 'completed' | 'archived';
-  linkCount: number;
-  totalClicks: number;
-  createdAt: string;
-}
-
-interface CampaignAnalyticsResponse {
-  campaign: CampaignRow;
-  totals: {
-    totalLinks: number;
-    totalClicks: number;
-    uniqueClicks: number;
-  };
-  clicksByDate: Array<{ date: string; clicks: number; unique: number }>;
-  clicksByPlatform: Array<{ name: string; value: number }>;
-  clicksByReferral: Array<{ name: string; value: number }>;
-  topLinks: Array<{
-    id: string;
-    linkName: string;
-    shortCode: string;
-    destinationType: string;
-    totalClicks: number;
-  }>;
-}
-
 const STATUS_STYLE: Record<string, string> = {
   active: 'text-emerald-600 dark:text-emerald-400',
   paused: 'text-amber-600 dark:text-amber-400',
@@ -84,11 +58,13 @@ const STATUS_STYLE: Record<string, string> = {
 export function CampaignsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { profile } = useAuth();
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CampaignRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CampaignRow | null>(null);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
+  const analyticsPanelRef = useRef<HTMLDivElement | null>(null);
 
   const [campaignName, setCampaignName] = useState('');
   const [description, setDescription] = useState('');
@@ -100,21 +76,34 @@ export function CampaignsPage() {
   const [status, setStatus] = useState<'active' | 'paused' | 'completed' | 'archived'>('active');
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['campaigns'],
-    queryFn: () => apiRequest<{ campaigns: CampaignRow[] }>('/api/campaigns'),
+    queryKey: ['campaigns', profile?.id],
+    queryFn: async () => ({ campaigns: await listCampaigns(profile!) }),
+    enabled: Boolean(profile),
   });
 
-  const activeCampaignId = selectedCampaignId || data?.campaigns?.[0]?.id || null;
+  const activeCampaign =
+    data?.campaigns?.find((c) => c.id === selectedCampaignId) ||
+    data?.campaigns?.[0] ||
+    null;
+  const activeCampaignId = activeCampaign?.id || null;
 
   const { data: detailData, isLoading: detailLoading } = useQuery({
-    queryKey: ['campaign-analytics', activeCampaignId],
-    queryFn: () =>
-      apiRequest<CampaignAnalyticsResponse>(`/api/analytics/campaigns/${activeCampaignId}?range=30d`),
-    enabled: Boolean(activeCampaignId),
+    queryKey: ['campaign-analytics', profile?.id, activeCampaignId],
+    queryFn: async () => {
+      const summary = await getAnalyticsSummary(profile!, {
+        range: '30d',
+        campaignId: activeCampaignId!,
+      });
+      return {
+        campaign: activeCampaign!,
+        ...summary,
+      };
+    },
+    enabled: Boolean(profile && activeCampaignId && activeCampaign),
   });
 
   const saveMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const payload = {
         campaignName,
         description: description.trim() || null,
@@ -126,9 +115,10 @@ export function CampaignsPage() {
         status,
       };
       if (editing) {
-        return apiRequest(`/api/campaigns/${editing.id}`, { method: 'PUT', body: payload });
+        await updateCampaign(editing.id, profile!, editing, payload);
+        return;
       }
-      return apiRequest('/api/campaigns', { method: 'POST', body: payload });
+      await createCampaign(profile!, payload);
     },
     onSuccess: () => {
       toast.success(editing ? 'Campaign updated' : 'Campaign created');
@@ -140,7 +130,7 @@ export function CampaignsPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest(`/api/campaigns/${id}`, { method: 'DELETE' }),
+    mutationFn: (id: string) => deleteCampaign(id),
     onSuccess: () => {
       toast.success('Campaign deleted');
       if (deleteTarget?.id === selectedCampaignId) {
@@ -178,18 +168,27 @@ export function CampaignsPage() {
     setFormOpen(true);
   };
 
+  const handleSelectCampaign = (id: string) => {
+    setSelectedCampaignId(id);
+    if (window.innerWidth < 1024) {
+      requestAnimationFrame(() => {
+        analyticsPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="space-y-5 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3.5 sm:gap-4">
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
+          <h1 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
             Campaigns
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             Group multiple smart links with shared UTM parameters and monitor campaign-level performance.
           </p>
         </div>
-        <Button onClick={openCreate}>
+        <Button onClick={openCreate} className="w-full sm:w-auto">
           <Plus className="h-4 w-4" />
           <span>New Campaign</span>
         </Button>
@@ -231,7 +230,7 @@ export function CampaignsPage() {
           />
         </Panel>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start">
           {/* Left: Campaign List */}
           <div className="lg:col-span-5 space-y-3">
             {data?.campaigns.map((camp) => {
@@ -239,22 +238,22 @@ export function CampaignsPage() {
               return (
                 <Panel
                   key={camp.id}
-                  className={`p-5 transition-colors cursor-pointer ${
+                  className={`p-4 sm:p-5 transition-colors cursor-pointer ${
                     selected
                       ? 'border-blue-600 dark:border-blue-500 bg-blue-50/30 dark:bg-blue-950/20'
                       : 'hover:bg-slate-50/60 dark:hover:bg-slate-800/30'
                   }`}
                 >
                   <div
-                    onClick={() => setSelectedCampaignId(camp.id)}
+                    onClick={() => handleSelectCampaign(camp.id)}
                     className="space-y-2.5"
                   >
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start justify-between gap-2.5">
                       <div className="min-w-0">
                         <h3 className="text-sm font-semibold text-slate-950 dark:text-white truncate">
                           {camp.campaignName}
                         </h3>
-                        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400">
                           <span className={`font-medium capitalize ${STATUS_STYLE[camp.status] || ''}`}>
                             {camp.status}
                           </span>
@@ -267,32 +266,35 @@ export function CampaignsPage() {
                         </div>
                       </div>
                       <div
-                        className="flex items-center gap-1 shrink-0"
+                        className="flex items-center gap-0.5 shrink-0"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <button
                           type="button"
                           onClick={() => navigate(`/analytics?campaignId=${camp.id}`)}
                           title="Full campaign analytics"
-                          className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                          aria-label="Full campaign analytics"
+                          className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white cursor-pointer"
                         >
-                          <BarChart3 className="h-3.5 w-3.5" />
+                          <BarChart3 className="h-4 w-4" />
                         </button>
                         <button
                           type="button"
                           onClick={() => openEdit(camp)}
                           title="Edit campaign"
-                          className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                          aria-label="Edit campaign"
+                          className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white cursor-pointer"
                         >
-                          <Pencil className="h-3.5 w-3.5" />
+                          <Pencil className="h-4 w-4" />
                         </button>
                         <button
                           type="button"
                           onClick={() => setDeleteTarget(camp)}
                           title="Delete campaign"
-                          className="rounded-md p-1.5 text-slate-500 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 cursor-pointer"
+                          aria-label="Delete campaign"
+                          className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 cursor-pointer"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
                     </div>
@@ -304,12 +306,12 @@ export function CampaignsPage() {
                     )}
 
                     <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-                      <span className="font-mono">
+                      <span className="font-mono break-all">
                         {camp.utmSource || camp.utmMedium || camp.utmCampaign
                           ? `utm: ${[camp.utmSource, camp.utmMedium, camp.utmCampaign].filter(Boolean).join(' / ')}`
                           : 'No default UTM tags'}
                       </span>
-                      <span>
+                      <span className="shrink-0">
                         {camp.startDate ? formatShortDate(camp.startDate) : 'Open start'} &ndash;{' '}
                         {camp.endDate ? formatShortDate(camp.endDate) : 'Ongoing'}
                       </span>
@@ -321,38 +323,39 @@ export function CampaignsPage() {
           </div>
 
           {/* Right: Campaign Analytics Panel */}
-          <Panel className="lg:col-span-7 p-6 space-y-6">
-            {detailLoading || !detailData ? (
-              <div className="space-y-4">
-                <Skeleton className="h-6 w-48" />
-                <Skeleton className="h-52 w-full" />
-              </div>
-            ) : (
-              <>
-                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
-                  <div>
-                    <h2 className="font-display text-lg font-bold text-slate-950 dark:text-white">
-                      {detailData.campaign.campaignName}
-                    </h2>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      Last 30 days campaign analytics &middot; {detailData.totals.totalLinks} assigned links
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-6 text-right">
-                    <div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400">Total Clicks</div>
-                      <div className="font-mono text-xl font-bold text-slate-950 dark:text-white tabular-nums">
-                        {formatNumber(detailData.totals.totalClicks)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400">Unique Clicks</div>
-                      <div className="font-mono text-xl font-bold text-slate-950 dark:text-white tabular-nums">
-                        {formatNumber(detailData.totals.uniqueClicks)}
-                      </div>
-                    </div>
-                  </div>
+          <div ref={analyticsPanelRef} className="lg:col-span-7 scroll-mt-20">
+            <Panel className="p-4 sm:p-6 space-y-5 sm:space-y-6">
+              {detailLoading || !detailData ? (
+                <div className="space-y-4">
+                  <Skeleton className="h-6 w-48" />
+                  <Skeleton className="h-52 w-full" />
                 </div>
+              ) : (
+                <>
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+                    <div className="min-w-0">
+                      <h2 className="font-display text-lg font-bold text-slate-950 dark:text-white truncate">
+                        {detailData.campaign.campaignName}
+                      </h2>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        Last 30 days campaign analytics &middot; {detailData.totals.totalLinks} assigned links
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-6 text-left sm:text-right shrink-0">
+                      <div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Total Clicks</div>
+                        <div className="font-mono text-xl font-bold text-slate-950 dark:text-white tabular-nums">
+                          {formatNumber(detailData.totals.totalClicks)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Unique Clicks</div>
+                        <div className="font-mono text-xl font-bold text-slate-950 dark:text-white tabular-nums">
+                          {formatNumber(detailData.totals.uniqueClicks)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
                 {/* Daily Click Activity */}
                 <div>
@@ -442,17 +445,18 @@ export function CampaignsPage() {
                   ) : (
                     <div className="divide-y divide-slate-100 dark:divide-slate-800">
                       {detailData.topLinks.map((l) => (
-                        <div key={l.id} className="py-2 flex items-center justify-between text-xs">
-                          <div className="min-w-0">
-                            <span className="font-medium text-slate-900 dark:text-slate-100">
+                        <div key={l.id} className="py-2.5 flex items-center justify-between gap-3 text-xs">
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium text-slate-900 dark:text-slate-100 truncate">
                               {l.linkName}
-                            </span>
-                            <span className="mx-2 text-slate-400">&middot;</span>
-                            <code className="text-blue-600 dark:text-blue-400">/r/{l.shortCode}</code>
-                            <span className="mx-2 text-slate-400">&middot;</span>
-                            <span className="text-slate-500">
-                              {DESTINATION_LABELS[l.destinationType] || l.destinationType}
-                            </span>
+                            </div>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-slate-500">
+                              <code className="text-blue-600 dark:text-blue-400">/r/{l.shortCode}</code>
+                              <span>&middot;</span>
+                              <span>
+                                {DESTINATION_LABELS[l.destinationType] || l.destinationType}
+                              </span>
+                            </div>
                           </div>
                           <span className="font-mono font-semibold text-slate-900 dark:text-white tabular-nums shrink-0">
                             {formatNumber(l.totalClicks)}
@@ -464,7 +468,8 @@ export function CampaignsPage() {
                 </div>
               </>
             )}
-          </Panel>
+            </Panel>
+          </div>
         </div>
       )}
 
@@ -504,7 +509,7 @@ export function CampaignsPage() {
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <Label htmlFor="camp-utm-source">UTM Source</Label>
               <Input
@@ -533,7 +538,7 @@ export function CampaignsPage() {
               />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <Label htmlFor="camp-start">Start Date</Label>
               <Input
@@ -568,11 +573,20 @@ export function CampaignsPage() {
               </Select>
             </div>
           </div>
-          <div className="pt-3 flex justify-end gap-2.5">
-            <Button type="button" variant="secondary" onClick={() => setFormOpen(false)}>
+          <div className="pt-3 flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5">
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full sm:w-auto"
+              onClick={() => setFormOpen(false)}
+            >
               Cancel
             </Button>
-            <Button type="submit" disabled={saveMutation.isPending}>
+            <Button
+              type="submit"
+              className="w-full sm:w-auto"
+              disabled={saveMutation.isPending}
+            >
               {saveMutation.isPending ? 'Saving...' : editing ? 'Save Changes' : 'Create Campaign'}
             </Button>
           </div>

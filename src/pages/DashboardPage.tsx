@@ -14,7 +14,8 @@ import {
 } from 'recharts';
 import { ArrowUpRight, Copy, Eye, Link2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
-import { apiRequest } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
+import { getAnalyticsSummary, getSmartLinkById } from '../lib/firestore-service';
 import {
   buildShortUrl,
   DESTINATION_LABELS,
@@ -32,7 +33,6 @@ import {
   Skeleton,
 } from '../components/ui/primitives';
 import { RedirectPreviewModal, type PreviewLinkItem } from '../components/links/RedirectPreviewModal';
-import type { DestinationConfigJson } from '../db/schema';
 
 interface DashboardLinkSummary {
   id: string;
@@ -72,12 +72,14 @@ type RangeKey = 'today' | '7d' | '30d' | 'all';
 
 export function DashboardPage() {
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const [range, setRange] = useState<RangeKey>('30d');
   const [previewLink, setPreviewLink] = useState<PreviewLinkItem | null>(null);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['dashboard-analytics', range],
-    queryFn: () => apiRequest<DashboardResponse>(`/api/analytics/dashboard?range=${range}`),
+    queryKey: ['dashboard-analytics', profile?.id, range],
+    queryFn: () => getAnalyticsSummary(profile!, { range }),
+    enabled: Boolean(profile),
   });
 
   const handleCopyShort = async (shortCode: string) => {
@@ -88,21 +90,20 @@ export function DashboardPage() {
 
   const openPreview = async (item: DashboardLinkSummary) => {
     try {
-      const full = await apiRequest<{ link: PreviewLinkItem & { destinationConfig: DestinationConfigJson } }>(
-        `/api/links/${item.id}`
-      );
-      setPreviewLink(full.link);
+      const full = await getSmartLinkById(item.id);
+      if (!full) throw new Error('Not found');
+      setPreviewLink(full);
     } catch {
       toast.error('Unable to load link preview');
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       {/* Header Row */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3.5 sm:gap-4">
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
+          <h1 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
             Overview
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
@@ -129,13 +130,13 @@ export function DashboardPage() {
       )}
 
       {/* Primary KPI Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {isLoading
           ? Array.from({ length: 4 }).map((_, i) => (
-              <Panel key={i} className="p-5 space-y-2.5">
-                <Skeleton className="h-3.5 w-24" />
-                <Skeleton className="h-8 w-20" />
-                <Skeleton className="h-3 w-32" />
+              <Panel key={i} className="p-4 sm:p-5 space-y-2.5">
+                <Skeleton className="h-3.5 w-20 sm:w-24" />
+                <Skeleton className="h-7 sm:h-8 w-16 sm:w-20" />
+                <Skeleton className="h-3 w-24 sm:w-32" />
               </Panel>
             ))
           : [
@@ -160,24 +161,26 @@ export function DashboardPage() {
                 sub: `${formatNumber(data?.totals.manualBrowserClicks ?? 0)} manual browser fallbacks`,
               },
             ].map((kpi) => (
-              <Panel key={kpi.label} className="p-5">
-                <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+              <Panel key={kpi.label} className="p-4 sm:p-5">
+                <div className="text-[11px] sm:text-xs font-medium text-slate-500 dark:text-slate-400">
                   {kpi.label}
                 </div>
-                <div className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-950 dark:text-white tabular-nums">
+                <div className="mt-1.5 sm:mt-2 font-display text-2xl sm:text-3xl font-bold tracking-tight text-slate-950 dark:text-white tabular-nums">
                   {kpi.value}
                 </div>
-                <div className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">{kpi.sub}</div>
+                <div className="mt-1 sm:mt-1.5 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 leading-snug">
+                  {kpi.sub}
+                </div>
               </Panel>
             ))}
       </div>
 
       {/* Platform & Social Traffic Strip */}
-      <Panel className="p-5">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-5 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 dark:divide-slate-800/80">
+      <Panel className="p-4 sm:p-5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-4 lg:gap-0 lg:divide-x lg:divide-slate-100 dark:lg:divide-slate-800/80">
           {isLoading
             ? Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="pt-2 sm:pt-0 sm:pl-5 first:pl-0 space-y-2">
+                <div key={i} className="lg:px-5 lg:first:pl-0 lg:last:pr-0 space-y-2">
                   <Skeleton className="h-3 w-20" />
                   <Skeleton className="h-6 w-12" />
                 </div>
@@ -189,13 +192,15 @@ export function DashboardPage() {
                 { label: 'Instagram Traffic', value: data?.totals.instagramTraffic ?? 0 },
                 { label: 'WhatsApp Traffic', value: data?.totals.whatsappTraffic ?? 0 },
                 { label: 'Facebook Traffic', value: data?.totals.facebookTraffic ?? 0 },
-              ].map((stat, idx) => (
+              ].map((stat) => (
                 <div
                   key={stat.label}
-                  className={idx === 0 ? 'pt-0' : 'pt-3 sm:pt-0 sm:pl-5'}
+                  className="lg:px-5 lg:first:pl-0 lg:last:pr-0"
                 >
-                  <div className="text-xs text-slate-500 dark:text-slate-400">{stat.label}</div>
-                  <div className="mt-1 font-mono text-xl font-semibold text-slate-900 dark:text-slate-100 tabular-nums">
+                  <div className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
+                    {stat.label}
+                  </div>
+                  <div className="mt-1 font-mono text-lg sm:text-xl font-semibold text-slate-900 dark:text-slate-100 tabular-nums">
                     {formatNumber(stat.value)}
                   </div>
                 </div>
@@ -204,9 +209,9 @@ export function DashboardPage() {
       </Panel>
 
       {/* Main Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <Panel className="lg:col-span-8 p-6">
-          <div className="flex items-center justify-between mb-5">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6">
+        <Panel className="lg:col-span-8 p-4 sm:p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4 sm:mb-5">
             <div>
               <h2 className="text-base font-semibold text-slate-950 dark:text-white">
                 Click Activity
@@ -228,7 +233,7 @@ export function DashboardPage() {
           </div>
 
           {isLoading ? (
-            <Skeleton className="h-64 w-full" />
+            <Skeleton className="h-56 sm:h-64 w-full" />
           ) : (data?.clicksByDate?.length ?? 0) === 0 ? (
             <EmptyState
               title="No click activity in this range"
@@ -241,7 +246,7 @@ export function DashboardPage() {
               }
             />
           ) : (
-            <div className="h-64 w-full">
+            <div className="h-56 sm:h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={data?.clicksByDate} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
                   <defs>
@@ -294,7 +299,7 @@ export function DashboardPage() {
           )}
         </Panel>
 
-        <Panel className="lg:col-span-4 p-6 flex flex-col">
+        <Panel className="lg:col-span-4 p-4 sm:p-6 flex flex-col">
           <div>
             <h2 className="text-base font-semibold text-slate-950 dark:text-white">
               Platform &amp; Referral Split
@@ -310,11 +315,11 @@ export function DashboardPage() {
               <Skeleton className="h-24 w-full" />
             </div>
           ) : (data?.clicksByPlatform?.length ?? 0) === 0 ? (
-            <div className="flex-1 flex items-center justify-center text-xs text-slate-500 dark:text-slate-400 py-12">
+            <div className="flex-1 flex items-center justify-center text-xs text-slate-500 dark:text-slate-400 py-10 sm:py-12">
               Platform metrics populate once links receive traffic.
             </div>
           ) : (
-            <div className="mt-4 space-y-6 flex-1">
+            <div className="mt-4 space-y-5 sm:space-y-6 flex-1">
               <div className="h-36 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
@@ -376,9 +381,9 @@ export function DashboardPage() {
       </div>
 
       {/* Bottom Tables: Top-Performing & Recently Created Links */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-6">
         <Panel className="overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 dark:border-slate-800">
             <h2 className="text-base font-semibold text-slate-950 dark:text-white">
               Top-Performing Links
             </h2>
@@ -391,7 +396,7 @@ export function DashboardPage() {
             </Link>
           </div>
           {isLoading ? (
-            <div className="p-6 space-y-3">
+            <div className="p-4 sm:p-6 space-y-3">
               {Array.from({ length: 4 }).map((_, i) => (
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
@@ -412,20 +417,20 @@ export function DashboardPage() {
               {data?.topLinks.map((link) => (
                 <div
                   key={link.id}
-                  className="px-6 py-3.5 flex items-center justify-between gap-4 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
+                  className="px-4 sm:px-6 py-3.5 flex items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
                       {link.linkName}
                     </div>
-                    <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400">
                       <code className="text-blue-600 dark:text-blue-400">/r/{link.shortCode}</code>
                       <span>&middot;</span>
                       <span>{DESTINATION_LABELS[link.destinationType] || link.destinationType}</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <div className="text-right">
+                  <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+                    <div className="text-right pr-1">
                       <div className="font-mono text-sm font-semibold text-slate-900 dark:text-white tabular-nums">
                         {formatNumber(link.totalClicks)}
                       </div>
@@ -435,7 +440,8 @@ export function DashboardPage() {
                       type="button"
                       onClick={() => void openPreview(link)}
                       title="Preview redirect"
-                      className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                      aria-label="Preview redirect"
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white cursor-pointer"
                     >
                       <Eye className="h-4 w-4" />
                     </button>
@@ -443,7 +449,8 @@ export function DashboardPage() {
                       type="button"
                       onClick={() => void handleCopyShort(link.shortCode)}
                       title="Copy short URL"
-                      className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                      aria-label="Copy short URL"
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white cursor-pointer"
                     >
                       <Copy className="h-4 w-4" />
                     </button>
@@ -455,7 +462,7 @@ export function DashboardPage() {
         </Panel>
 
         <Panel className="overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 dark:border-slate-800">
             <h2 className="text-base font-semibold text-slate-950 dark:text-white">
               Recently Created Links
             </h2>
@@ -468,7 +475,7 @@ export function DashboardPage() {
             </Link>
           </div>
           {isLoading ? (
-            <div className="p-6 space-y-3">
+            <div className="p-4 sm:p-6 space-y-3">
               {Array.from({ length: 4 }).map((_, i) => (
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
@@ -489,13 +496,13 @@ export function DashboardPage() {
               {data?.recentLinks.map((link) => (
                 <div
                   key={link.id}
-                  className="px-6 py-3.5 flex items-center justify-between gap-4 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
+                  className="px-4 sm:px-6 py-3.5 flex items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
                       {link.linkName}
                     </div>
-                    <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400">
                       <span className={link.status === 'active' ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-amber-600 dark:text-amber-400 font-medium'}>
                         {link.status === 'active' ? 'Active' : 'Inactive'}
                       </span>
@@ -505,7 +512,7 @@ export function DashboardPage() {
                       <span>{formatShortDate(link.createdAt)}</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1 shrink-0">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -517,7 +524,8 @@ export function DashboardPage() {
                       type="button"
                       onClick={() => void handleCopyShort(link.shortCode)}
                       title="Copy short URL"
-                      className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                      aria-label="Copy short URL"
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white cursor-pointer"
                     >
                       <Copy className="h-4 w-4" />
                     </button>

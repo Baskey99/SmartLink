@@ -11,9 +11,13 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { apiRequest } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
+import {
+  createSmartLink,
+  listCampaigns,
+  listSupportedApps,
+} from '../lib/firestore-service';
 import { processDestinationUrl } from '../lib/redirect-engine/index';
-import type { SupportedAppRecord } from '../lib/redirect-engine/types';
 import type { DestinationConfigJson } from '../db/schema';
 import { buildShortUrl, DESTINATION_LABELS } from '../lib/utils';
 import { Button, Input, Label, Modal, Panel, Select } from '../components/ui/primitives';
@@ -38,6 +42,7 @@ interface CreatedLinkResponse {
 export function CreateSmartLinkPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { profile } = useAuth();
 
   const [linkName, setLinkName] = useState('');
   const [destinationType, setDestinationType] = useState('auto');
@@ -58,12 +63,14 @@ export function CreateSmartLinkPage() {
 
   const { data: appsData } = useQuery({
     queryKey: ['supported-apps'],
-    queryFn: () => apiRequest<{ apps: SupportedAppRecord[] }>('/api/apps'),
+    queryFn: async () => ({ apps: await listSupportedApps() }),
+    enabled: Boolean(profile),
   });
 
   const { data: campaignsData } = useQuery({
-    queryKey: ['campaigns'],
-    queryFn: () => apiRequest<{ campaigns: CampaignOption[] }>('/api/campaigns'),
+    queryKey: ['campaigns', profile?.id],
+    queryFn: async () => ({ campaigns: await listCampaigns(profile!) }),
+    enabled: Boolean(profile),
   });
 
   const activeApps = useMemo(
@@ -83,21 +90,18 @@ export function CreateSmartLinkPage() {
 
   const createMutation = useMutation({
     mutationFn: () =>
-      apiRequest<CreatedLinkResponse>('/api/links', {
-        method: 'POST',
-        body: {
-          linkName,
-          destinationType,
-          destinationUrl,
-          customShortCode: customShortCode.trim() || undefined,
-          campaignId: campaignId || null,
-          fallbackPreference,
-          expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
-          utmSource: utmSource.trim() || undefined,
-          utmMedium: utmMedium.trim() || undefined,
-          utmCampaign: utmCampaign.trim() || undefined,
-          customDomain: customDomain.trim() || undefined,
-        },
+      createSmartLink(profile!, {
+        linkName,
+        destinationType,
+        destinationUrl,
+        customShortCode: customShortCode.trim() || undefined,
+        campaignId: campaignId || null,
+        fallbackPreference,
+        expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+        utmSource: utmSource.trim() || undefined,
+        utmMedium: utmMedium.trim() || undefined,
+        utmCampaign: utmCampaign.trim() || undefined,
+        customDomain: customDomain.trim() || undefined,
       }),
     onSuccess: (res) => {
       setCreatedLink(res.link);
@@ -153,9 +157,9 @@ export function CreateSmartLinkPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       <div>
-        <h1 className="font-display text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
+        <h1 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
           Create Smart Link
         </h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
@@ -164,11 +168,11 @@ export function CreateSmartLinkPage() {
       </div>
 
       {createdLink && (
-        <Panel className="p-6 border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/40 dark:bg-emerald-950/20">
+        <Panel className="p-4 sm:p-6 border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/40 dark:bg-emerald-950/20">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div className="flex items-start gap-3">
               <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-              <div>
+              <div className="min-w-0">
                 <h2 className="text-base font-semibold text-slate-950 dark:text-white">
                   {createdLink.linkName} is live
                 </h2>
@@ -183,10 +187,10 @@ export function CreateSmartLinkPage() {
                 </div>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
               <Button variant="primary" size="sm" onClick={() => void handleCopyCreated()}>
                 {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                <span>{copied ? 'Copied' : 'Copy Short URL'}</span>
+                <span>{copied ? 'Copied' : 'Copy URL'}</span>
               </Button>
               <Button variant="secondary" size="sm" onClick={() => setPreviewOpen(true)}>
                 <Eye className="h-3.5 w-3.5" />
@@ -204,10 +208,10 @@ export function CreateSmartLinkPage() {
         </Panel>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start">
         {/* Form Column */}
-        <form onSubmit={handleSubmit} className="lg:col-span-7 space-y-6">
-          <Panel className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="lg:col-span-7 space-y-5 sm:space-y-6">
+          <Panel className="p-4 sm:p-6 space-y-4 sm:space-y-5">
             <div>
               <h2 className="text-base font-semibold text-slate-950 dark:text-white">
                 Basic Information
@@ -286,7 +290,7 @@ export function CreateSmartLinkPage() {
                   placeholder="e.g. summer-video (auto-generated if blank)"
                   value={customShortCode}
                   onChange={(e) => setCustomShortCode(e.target.value)}
-                  className="font-mono text-xs"
+                  className="font-mono"
                 />
               </div>
 
@@ -317,7 +321,7 @@ export function CreateSmartLinkPage() {
             </div>
           </Panel>
 
-          <Panel className="p-6 space-y-5">
+          <Panel className="p-4 sm:p-6 space-y-4 sm:space-y-5">
             <div>
               <h2 className="text-base font-semibold text-slate-950 dark:text-white">
                 Redirection Behavior &amp; Tracking
@@ -363,7 +367,7 @@ export function CreateSmartLinkPage() {
                 placeholder="e.g. go.yourdomain.com (leave blank to use workspace domain)"
                 value={customDomain}
                 onChange={(e) => setCustomDomain(e.target.value)}
-                className="font-mono text-xs"
+                className="font-mono"
               />
             </div>
 
@@ -397,11 +401,20 @@ export function CreateSmartLinkPage() {
               </div>
             </div>
 
-            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-3">
-              <Button type="button" variant="secondary" onClick={() => navigate('/links')}>
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2.5 sm:gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full sm:w-auto"
+                onClick={() => navigate('/links')}
+              >
                 Cancel
               </Button>
-              <Button type="submit" disabled={createMutation.isPending}>
+              <Button
+                type="submit"
+                className="w-full sm:w-auto"
+                disabled={createMutation.isPending}
+              >
                 {createMutation.isPending ? 'Generating Smart Link...' : 'Create Smart Link'}
               </Button>
             </div>
@@ -410,7 +423,7 @@ export function CreateSmartLinkPage() {
 
         {/* Live Universal URL Processing Inspector */}
         <div className="lg:col-span-5 space-y-4">
-          <Panel className="p-6 space-y-4">
+          <Panel className="p-4 sm:p-6 space-y-4">
             <div>
               <h2 className="text-base font-semibold text-slate-950 dark:text-white">
                 URL Processing Inspector
@@ -452,7 +465,7 @@ export function CreateSmartLinkPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   <div>
                     <div className="text-slate-500 dark:text-slate-400">Detected Adapter</div>
                     <div className="mt-0.5 font-semibold text-slate-900 dark:text-white">
@@ -486,7 +499,7 @@ export function CreateSmartLinkPage() {
                   </div>
                 )}
 
-                <div className="border-t border-slate-100 dark:border-slate-800 pt-3 grid grid-cols-3 gap-2 text-[11px]">
+                <div className="border-t border-slate-100 dark:border-slate-800 pt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-2 text-[11px]">
                   <div>
                     <div className="text-slate-500 dark:text-slate-400">Android App Link</div>
                     <div className="font-medium text-slate-900 dark:text-slate-100 mt-0.5">
